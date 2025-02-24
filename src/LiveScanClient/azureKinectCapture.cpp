@@ -12,7 +12,7 @@
 
 #define SERVER_HOST "127.0.0.1"
 #define SERVER_PORT_SEND 48003
-#define FRAME_SEND_INTERVAL_MS 2000
+#define FRAME_SEND_INTERVAL_MS 500
 
 AzureKinectCapture::AzureKinectCapture() : stopSending(false), lastFrameTime(0)
 {
@@ -41,6 +41,9 @@ AzureKinectCapture::AzureKinectCapture() : stopSending(false), lastFrameTime(0)
         closesocket(clientSocket);
         clientSocket = INVALID_SOCKET;
     }
+
+    // Start the TCP sending thread
+    sendingThread = std::thread(&AzureKinectCapture::SendFrameWorker, this);
 }
 
 AzureKinectCapture::~AzureKinectCapture()
@@ -54,6 +57,13 @@ AzureKinectCapture::~AzureKinectCapture()
     k4a_image_release(colorImageDownscaled);
     k4a_transformation_destroy(transformation);
     k4a_device_close(kinectSensor);
+
+    // Signal the sending thread to stop
+    stopSending = true;
+    queueCondition.notify_one();
+    if (sendingThread.joinable()) {
+        sendingThread.join();
+    }
 
     // Close the socket
     if (clientSocket != INVALID_SOCKET) {
@@ -298,18 +308,39 @@ bool AzureKinectCapture::AcquireFrame()
     }
 
     // Convert the k4a_image to an OpenCV Mat
-    cv::Mat cImg = cv::Mat(k4a_image_get_height_pixels(colorImage), k4a_image_get_width_pixels(colorImage), CV_8UC4, k4a_image_get_buffer(colorImage));
+    cv::Mat cImg = cv::Mat(k4a_image_get_height_pixels(colorImage),
+        k4a_image_get_width_pixels(colorImage),
+        CV_8UC4, k4a_image_get_buffer(colorImage));
 
-    // Get the current time
+    // Get the current time and check the interval
     auto now = std::chrono::steady_clock::now();
     auto nowMs = std::chrono::time_point_cast<std::chrono::milliseconds>(now).time_since_epoch().count();
-
-    // Check if enough time has passed since the last frame was sent
     if (nowMs - lastFrameTime.count() >= FRAME_SEND_INTERVAL_MS) {
-        // Send the frame via TCP
-        SendFrameViaTCP(cImg);
+        // Transform the depth image to the color camera's coordinate space
+        if (transformedDepthImage == NULL)
+        {
+            k4a_image_create(K4A_IMAGE_FORMAT_DEPTH16, k4a_image_get_width_pixels(colorImage), k4a_image_get_height_pixels(colorImage), k4a_image_get_width_pixels(colorImage) * sizeof(uint16_t), &transformedDepthImage);
+        }
+        k4a_transformation_depth_image_to_color_camera(transformation, depthImage, transformedDepthImage);
 
-        // Update the last frame time
+        // Create a copy of cImg for masking
+        cv::Mat maskedImg = cImg.clone();
+
+        // Apply depth mask: remove pixels further than 50cm and parts with no depth data
+        {
+            cv::Mat depthMat = cv::Mat(k4a_image_get_height_pixels(transformedDepthImage),
+                k4a_image_get_width_pixels(transformedDepthImage),
+                CV_16U, k4a_image_get_buffer(transformedDepthImage));
+            cv::Mat mask = (depthMat == 0) | (depthMat > 500);  // mask: 255 where depth == 0 or depth > 500
+            maskedImg.setTo(cv::Scalar(0, 0, 0, 255), mask);
+        }
+
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+            while (!frameQueue.empty()) { frameQueue.pop(); }  // Clear backlog
+            frameQueue.push(maskedImg.clone());
+        }
+        queueCondition.notify_one();
         lastFrameTime = std::chrono::milliseconds(nowMs);
     }
 
@@ -358,6 +389,20 @@ void AzureKinectCapture::SendFrameViaTCP(const cv::Mat& frame)
 
     // Send the image data
     send(clientSocket, (const char*)buf.data(), buf.size(), 0);
+}
+
+void AzureKinectCapture::SendFrameWorker()
+{
+    while (true) {
+        std::unique_lock<std::mutex> lock(queueMutex);
+        queueCondition.wait(lock, [this] { return stopSending || !frameQueue.empty(); });
+        if (stopSending && frameQueue.empty())
+            break;
+        cv::Mat frame = frameQueue.front();
+        frameQueue.pop();
+        lock.unlock();
+        SendFrameViaTCP(frame);
+    }
 }
 
 void AzureKinectCapture::UpdateDepthPointCloudForColorFrame()
