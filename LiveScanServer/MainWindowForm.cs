@@ -38,6 +38,9 @@ namespace KinectServer
 {
     public partial class MainWindowForm : Form
     {
+        [DllImport("k4a.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern uint k4a_device_get_installed_count();
+
         [DllImport("ICP.dll")]
         static extern float ICP(IntPtr verts1, IntPtr verts2, int nVerts1, int nVerts2, float[] R, float[] t, int maxIter = 200);
 
@@ -97,8 +100,10 @@ namespace KinectServer
             bServerRunning = true;
             //btStart.Text = "Stop server";
 
+            uint count = k4a_device_get_installed_count();
+
             // Start multiple instances of LiveScanClient.exe in headless and autoconnect mode
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < count; i++)
             {
                 Process liveScanClientProcess = new Process();
                 liveScanClientProcess.StartInfo.FileName = "LiveScanClient.exe";
