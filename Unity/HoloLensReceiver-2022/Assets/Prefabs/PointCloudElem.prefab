@@ -98,6 +98,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5fe88d387a3864240bca3acfa53ca38b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  numPoints: 20000
+  pointSize: 0.01
 --- !u!114 &7260786953554719222
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -110,7 +112,7 @@ MonoBehaviour:
   m_Script: {fileID: -1552182283, guid: e725a070cec140c4caffb81624c8c787, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  SortKey: 141786525
+  SortKey: 2011518255
   ObjectInterest: 1
   Flags: 262145
   NestedObjects: []

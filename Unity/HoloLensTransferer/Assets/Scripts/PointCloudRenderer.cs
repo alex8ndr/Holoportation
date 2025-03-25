@@ -1,13 +1,11 @@
 ﻿using Fusion;
-using GK;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
 public class PointCloudRenderer : MonoBehaviour
 {
-    public int maxChunkSize = 65535; // If you want to whole point cloud
-    //public int maxChunkSize = 1361; // If you only want a small portion of the points
+    public int maxChunkSize = 65535;
     public float pointSize = 0.005f;
     public GameObject pointCloudElem;
     public Material pointCloudMaterial;
@@ -76,18 +74,15 @@ public class PointCloudRenderer : MonoBehaviour
             }
 
             // Thin the point cloud
-            //List<Vector3> newPoints = new List<Vector3>();
-            //List<Color> newColors = new List<Color>();
+            List<Vector3> newPoints = new List<Vector3>();
+            List<Color> newColors = new List<Color>();
 
-            //float voxelSize = 0.02f;
+            float voxelSize = 0.005f;
 
-            //VoxelDownsample(points.ToList(), colors.ToList(), ref newPoints, ref newColors, voxelSize);
-            //Debug.Log("Original points: " + points.Length + ", new points: " + newPoints.Count);
+            VoxelDownsample(points.ToList(), colors.ToList(), ref newPoints, ref newColors, voxelSize);
+            Debug.Log("Original points: " + points.Length + ", new points: " + newPoints.Count);
 
-            //ElemRenderer renderer = webRTCManager.networkObjects[i].GetComponent<ElemRenderer>();
-            //renderer.TriggerMeshUpdate(points.Length, colors.Length, points, colors);
-
-            webRTCManager.SendPointCloud(points, colors);
+            webRTCManager.SendPointCloud(newPoints.ToArray(), newColors.ToArray());
 
             offset += nPointsToRender;
         }
@@ -97,26 +92,12 @@ public class PointCloudRenderer : MonoBehaviour
     {
         for (int i = 0; i < nElems; i++)
         {
-            //GameObject newElem = GameObject.Instantiate(pointCloudElem);
-            //newElem.transform.parent = transform;
-            //newElem.transform.localPosition = new Vector3(0.0f, 0.0f, 0.0f);
-            //newElem.transform.localRotation = Quaternion.identity;
-            //newElem.transform.localScale = new Vector3(1.0f, 1.0f, 1.0f);
-
-            //elems.Add(newElem);
-
             webRTCManager.SpawnNetworkObject(pointCloudElem, new Vector3(0.0f, 0.0f, 0.0f), Quaternion.identity);
         }
     }
 
     void RemoveElems(int nElems)
     {
-        //for (int i = 0; i < nElems; i++)
-        //{
-        //    Destroy(elems[0]);
-        //    elems.Remove(elems[0]);
-        //}
-
         webRTCManager.DestroyNetworkObjects(nElems);
     }
 

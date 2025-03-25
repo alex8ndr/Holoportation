@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
@@ -8,6 +9,9 @@ public class ElemRenderer : MonoBehaviour
     private WebRTCManager webRTCManager;
 
     private float timeSinceLastRender = 0.0f;
+    private float totalTime = 0.0f;
+    private float averageFPS = 0.0f;
+    private int numFrames = 0;
 
     void Start()
     {
@@ -48,8 +52,11 @@ public class ElemRenderer : MonoBehaviour
             mesh.SetIndices(indices, MeshTopology.Points, 0);
             GetComponent<MeshFilter>().mesh = mesh;
 
-            Debug.Log("Last FPS: " + (float)1 / timeSinceLastRender);
+            totalTime += timeSinceLastRender;
             timeSinceLastRender = 0.0f;
+            numFrames++;
+            averageFPS = numFrames / totalTime;
+            Debug.Log("Average FPS: " + averageFPS);
         }
     }
 }

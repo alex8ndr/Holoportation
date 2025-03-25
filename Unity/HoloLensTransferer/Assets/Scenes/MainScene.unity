@@ -531,7 +531,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1753297904}
-  - component: {fileID: 1753297906}
   - component: {fileID: 1753297907}
   - component: {fileID: 1753297908}
   - component: {fileID: 1753297909}
@@ -558,7 +557,7 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1753297906
+--- !u!114 &1753297907
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -570,35 +569,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 693cb234038a8684cb39ced809362b56, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  IPAddress: 127.0.0.1
   port: 48002
---- !u!114 &1753297907
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1753297903}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c6b29a23944652d42a60eccbc8a345ab, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  keyboardDone:
-    m_PersistentCalls:
-      m_Calls:
-      - m_Target: {fileID: 1753297906}
-        m_TargetAssemblyTypeName: PointCloudReceiver, Assembly-CSharp
-        m_MethodName: Connect
-        m_Mode: 0
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 1
-  titleText: 127.0.0.1
 --- !u!114 &1753297908
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -612,8 +584,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   maxChunkSize: 65535
-  pointSize: 0.005
-  pointCloudElem: {fileID: 1002025039999346, guid: e744b53116b889a4e8cce0fb232895c9, type: 3}
+  pointSize: 0.004
+  pointCloudElem: {fileID: 1002025039999346, guid: a88a82d755661b24598bd7acf0bb058f, type: 3}
   pointCloudMaterial: {fileID: 2100000, guid: 30c9fadcd170de64f8c8e51e643d3b69, type: 2}
   maxNumElems: 1
   webRTCManager: {fileID: 1753297909}
