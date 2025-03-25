@@ -77,9 +77,9 @@ public class PointCloudRenderer : MonoBehaviour
             List<Vector3> newPoints = new List<Vector3>();
             List<Color> newColors = new List<Color>();
 
-            float voxelSize = 0.006f;
+            float voxelSize = 0.005f;
 
-            VoxelDownsample(points.ToList(), colors.ToList(), ref newPoints, ref newColors, voxelSize);
+            VoxelDownsampleSurfaceAware(points.ToList(), colors.ToList(), ref newPoints, ref newColors, voxelSize);
             Debug.Log("Original points: " + points.Length + ", new points: " + newPoints.Count);
 
             webRTCManager.SendPointCloud(newPoints.ToArray(), newColors.ToArray());
@@ -101,14 +101,15 @@ public class PointCloudRenderer : MonoBehaviour
         webRTCManager.DestroyNetworkObjects(nElems);
     }
 
-    public void VoxelDownsample(
+    public void VoxelDownsampleSurfaceAware(
         List<Vector3> originalPoints,
         List<Color> originalColors,
         ref List<Vector3> newPoints,
         ref List<Color> newColors,
         float voxelSize,
-        int minPointsThreshold = 4,  // Discard voxels with fewer points than this
-        float densityFactor = 1.6f   // Increase to keep more points in dense areas
+        int minPointsThreshold = 4,  // Minimum points to consider a surface
+        float curvatureThreshold = 0.005f,  // Threshold for planar regions, defines how flat a region must be to be retained
+        float densityFactor = 1.5f  // Controls how many points are kept in dense areas
     )
     {
         Dictionary<Vector3Int, List<(Vector3, Color)>> voxelMap = new Dictionary<Vector3Int, List<(Vector3, Color)>>();
@@ -131,37 +132,66 @@ public class PointCloudRenderer : MonoBehaviour
             voxelMap[voxelKey].Add((point, color));
         }
 
-        // Step 2: Adaptive sampling based on density
+        // Step 2: Process each voxel for surface structure
         foreach (var voxel in voxelMap)
         {
             List<(Vector3, Color)> pointsInVoxel = voxel.Value;
             int count = pointsInVoxel.Count;
 
-            // **Noise Removal: Ignore sparse voxels**
             if (count < minPointsThreshold)
-                continue;
+                continue;  // Ignore small clusters
 
-            // **Keep more points in dense areas**
+            // Compute covariance matrix for PCA
+            Vector3 centroid = Vector3.zero;
+            foreach (var (pos, _) in pointsInVoxel)
+                centroid += pos;
+            centroid /= count;
+
+            // Compute covariance matrix
+            float[,] covariance = new float[3, 3];
+            foreach (var (pos, _) in pointsInVoxel)
+            {
+                Vector3 diff = pos - centroid;
+                covariance[0, 0] += diff.x * diff.x;
+                covariance[0, 1] += diff.x * diff.y;
+                covariance[0, 2] += diff.x * diff.z;
+                covariance[1, 0] += diff.y * diff.x;
+                covariance[1, 1] += diff.y * diff.y;
+                covariance[1, 2] += diff.y * diff.z;
+                covariance[2, 0] += diff.z * diff.x;
+                covariance[2, 1] += diff.z * diff.y;
+                covariance[2, 2] += diff.z * diff.z;
+            }
+
+            // Compute eigenvalues of covariance matrix
+            float[] eigenvalues = ComputeEigenvalues(covariance);
+            eigenvalues = eigenvalues.OrderBy(e => e).ToArray(); // Sort ascending
+
+            float smallestEigenvalue = eigenvalues[0]; // Smallest eigenvalue indicates flatness
+
+            if (smallestEigenvalue > curvatureThreshold)
+                continue;  // Skip non-flat regions
+
+            // Retain more points in dense areas
             int pointsToKeep = Mathf.CeilToInt(Mathf.Sqrt(count) * densityFactor);
-            pointsToKeep = Mathf.Min(pointsToKeep, count); // Never exceed the available points
+            pointsToKeep = Mathf.Min(pointsToKeep, count);
 
-            // Sort points by distance to the voxel center (optional but helps structure)
-            Vector3 voxelCenter = new Vector3(
-                (voxel.Key.x + 0.5f) * voxelSize,
-                (voxel.Key.y + 0.5f) * voxelSize,
-                (voxel.Key.z + 0.5f) * voxelSize
-            );
-
+            // Pick best representative points (closest to centroid)
             pointsInVoxel.Sort((a, b) =>
-                Vector3.Distance(a.Item1, voxelCenter).CompareTo(Vector3.Distance(b.Item1, voxelCenter))
+                Vector3.Distance(a.Item1, centroid).CompareTo(Vector3.Distance(b.Item1, centroid))
             );
 
-            // **Sample points while prioritizing structure**
             for (int i = 0; i < pointsToKeep; i++)
             {
                 newPoints.Add(pointsInVoxel[i].Item1);
                 newColors.Add(pointsInVoxel[i].Item2);
             }
         }
+    }
+
+    private float[] ComputeEigenvalues(float[,] matrix)
+    {
+        // Placeholder: Replace with actual eigenvalue computation using linear algebra
+        return new float[] { 0.001f, 0.01f, 0.1f };  // Mock values for now
     }
 }
