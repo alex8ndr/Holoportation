@@ -77,7 +77,7 @@ public class PointCloudRenderer : MonoBehaviour
             List<Vector3> newPoints = new List<Vector3>();
             List<Color> newColors = new List<Color>();
 
-            float voxelSize = 0.005f;
+            float voxelSize = 0.006f;
 
             VoxelDownsample(points.ToList(), colors.ToList(), ref newPoints, ref newColors, voxelSize);
             Debug.Log("Original points: " + points.Length + ", new points: " + newPoints.Count);
@@ -101,10 +101,19 @@ public class PointCloudRenderer : MonoBehaviour
         webRTCManager.DestroyNetworkObjects(nElems);
     }
 
-    public void VoxelDownsample(List<Vector3> originalPoints, List<Color> originalColors, ref List<Vector3> newPoints, ref List<Color> newColors, float voxelSize)
+    public void VoxelDownsample(
+        List<Vector3> originalPoints,
+        List<Color> originalColors,
+        ref List<Vector3> newPoints,
+        ref List<Color> newColors,
+        float voxelSize,
+        int minPointsThreshold = 4,  // Discard voxels with fewer points than this
+        float densityFactor = 1.6f   // Increase to keep more points in dense areas
+    )
     {
         Dictionary<Vector3Int, List<(Vector3, Color)>> voxelMap = new Dictionary<Vector3Int, List<(Vector3, Color)>>();
 
+        // Step 1: Assign points to voxels
         for (int i = 0; i < originalPoints.Count; i++)
         {
             Vector3 point = originalPoints[i];
@@ -122,24 +131,37 @@ public class PointCloudRenderer : MonoBehaviour
             voxelMap[voxelKey].Add((point, color));
         }
 
-        // Compute the average position and color for each voxel
+        // Step 2: Adaptive sampling based on density
         foreach (var voxel in voxelMap)
         {
-            Vector3 avgPosition = Vector3.zero;
-            Color avgColor = Color.black;
-            int count = voxel.Value.Count;
+            List<(Vector3, Color)> pointsInVoxel = voxel.Value;
+            int count = pointsInVoxel.Count;
 
-            foreach (var (pos, col) in voxel.Value)
+            // **Noise Removal: Ignore sparse voxels**
+            if (count < minPointsThreshold)
+                continue;
+
+            // **Keep more points in dense areas**
+            int pointsToKeep = Mathf.CeilToInt(Mathf.Sqrt(count) * densityFactor);
+            pointsToKeep = Mathf.Min(pointsToKeep, count); // Never exceed the available points
+
+            // Sort points by distance to the voxel center (optional but helps structure)
+            Vector3 voxelCenter = new Vector3(
+                (voxel.Key.x + 0.5f) * voxelSize,
+                (voxel.Key.y + 0.5f) * voxelSize,
+                (voxel.Key.z + 0.5f) * voxelSize
+            );
+
+            pointsInVoxel.Sort((a, b) =>
+                Vector3.Distance(a.Item1, voxelCenter).CompareTo(Vector3.Distance(b.Item1, voxelCenter))
+            );
+
+            // **Sample points while prioritizing structure**
+            for (int i = 0; i < pointsToKeep; i++)
             {
-                avgPosition += pos;
-                avgColor += col; // Convert Color to Vector4 for addition
+                newPoints.Add(pointsInVoxel[i].Item1);
+                newColors.Add(pointsInVoxel[i].Item2);
             }
-
-            avgPosition /= count;
-            avgColor /= count; // Averaging the color
-
-            newPoints.Add(avgPosition);
-            newColors.Add(avgColor);
         }
     }
 }

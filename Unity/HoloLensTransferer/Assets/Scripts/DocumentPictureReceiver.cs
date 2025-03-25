@@ -127,9 +127,6 @@ public class DocumentPictureReceiver : NetworkBehaviour
                 {
                     SendImageData(receivedImageData);
                     receivedImageData = null;
-                    // Update networked properties for width and height (ensuring they are synchronized **after** data transmission)
-                    receivedImageWidth = newWidth;
-                    receivedImageHeight = newHeight;
                 }
             }
         }
@@ -137,6 +134,8 @@ public class DocumentPictureReceiver : NetworkBehaviour
         // Check that the image was received here and fully sent through WebRTC
         if (isProcessingImage && webRTCManager.HasNewDocument())
         {
+            receivedImageWidth = newWidth;
+            receivedImageHeight = newHeight;
             ApplyTexture();
             isProcessingImage = false;
         }

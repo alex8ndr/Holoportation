@@ -1,4 +1,4 @@
-﻿Shader "Custom/GS Billboard"
+﻿Shader "Custom/GS Billboard HoloLens2"
 {
     Properties
     {
@@ -14,18 +14,18 @@
 
             CGPROGRAM
             #pragma target 5.0
-            #pragma multi_compile_instancing
             #pragma vertex VS_Main
             #pragma fragment FS_Main
+            #pragma geometry GS_Main
             #include "UnityCG.cginc"
 
-            struct VS_INPUT
+            struct GS_INPUT
             {
                 float4 pos : POSITION;
                 float4 col : COLOR;
             };
 
-            struct VS_OUTPUT
+            struct FS_INPUT
             {
                 float4 pos : SV_POSITION;
                 float4 col : COLOR;
@@ -33,36 +33,51 @@
 
             float _PointSize;
 
-            VS_OUTPUT VS_Main(VS_INPUT v, uint instanceID : SV_InstanceID)
+            // Vertex Shader
+            GS_INPUT VS_Main(appdata_full v)
             {
-                VS_OUTPUT o;
+                GS_INPUT output;
+                output.pos = mul(unity_ObjectToWorld, v.vertex); // Convert to world space
+                output.col = v.color;
+                return output;
+            }
 
-                // Use Unity's precomputed camera position
-                float3 camPos = _WorldSpaceCameraPos;
+            // Geometry Shader
+            [maxvertexcount(4)]
+            void GS_Main(point GS_INPUT p[1], inout TriangleStream<FS_INPUT> triStream)
+            {
+                // Get correct camera position per eye
+                float3 camPos = UNITY_MATRIX_V[3].xyz;
 
                 // Billboard alignment
                 float3 up = float3(0, 1, 0);
-                float3 look = normalize(v.pos.xyz - camPos);
-                float3 right = normalize(cross(up, look)); // Use normalize()
+                float3 look = normalize(p[0].pos.xyz - camPos);
+                float3 right = normalize(cross(up, look));
 
-                // Precomputed quad offsets
-                static const float2 offsets[4] = { float2(-1,-1), float2(1,-1), float2(-1,1), float2(1,1) };
+                float halfS = 0.5f * _PointSize;
 
-                // Expand point to quad
-                float halfSize = 0.5 * _PointSize;
-                float3 cornerPos = v.pos.xyz + offsets[instanceID].x * halfSize * right + offsets[instanceID].y * halfSize * up;
-    
-                // Transform to clip space
-                o.pos = UnityWorldToClipPos(float4(cornerPos, 1.0));
-                o.col = v.col;
-    
-                return o;
+                // Quad corners
+                float3 v[4];
+                v[0] = p[0].pos.xyz + halfS * right - halfS * up;
+                v[1] = p[0].pos.xyz + halfS * right + halfS * up;
+                v[2] = p[0].pos.xyz - halfS * right - halfS * up;
+                v[3] = p[0].pos.xyz - halfS * right + halfS * up;
+
+                FS_INPUT pOut;
+                for (int i = 0; i < 4; i++)
+                {
+                    pOut.pos = UnityWorldToClipPos(float4(v[i], 1.0));
+                    pOut.col = p[0].col;
+                    triStream.Append(pOut);
+                }
+
+                triStream.RestartStrip(); // Ensure proper triangle strip handling
             }
 
-
-            float4 FS_Main(VS_OUTPUT i) : SV_Target
+            // Fragment Shader
+            float4 FS_Main(FS_INPUT input) : SV_Target
             {
-                return i.col;
+                return input.col;
             }
 
             ENDCG
