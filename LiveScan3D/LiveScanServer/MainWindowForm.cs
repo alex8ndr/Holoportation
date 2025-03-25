@@ -100,6 +100,9 @@ namespace KinectServer
             bServerRunning = true;
             //btStart.Text = "Stop server";
 
+            UpdateShowLiveButtonState();
+            UpdateButtonStates(); // Add this line to set initial button states
+
             uint count = k4a_device_get_installed_count();
 
             // Start multiple instances of LiveScanClient.exe in headless and autoconnect mode
@@ -285,10 +288,8 @@ namespace KinectServer
             if (bLiveViewRunning)
                 RestartUpdateWorker();
 
-            btRecord.Enabled = true;
             btRecord.Text = "Start recording";
-            btRefineCalib.Enabled = true;
-            btCalibrate.Enabled = true;
+            UpdateButtonStates(); // Replace the manual button enabling with this call
         }
 
         //Continually requests frames that will be displayed in the live view window.
@@ -441,9 +442,9 @@ namespace KinectServer
         private void refineWorker_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
         {
             //Re-enable all of the buttons after refinement.
-            btRefineCalib.Enabled = true;
-            btCalibrate.Enabled = true;
-            btRecord.Enabled = true;
+            UpdateButtonStates(); // Replace the manual button enabling with this call
+
+            UpdateShowLiveButtonState();
         }
 
         //This is used for: starting/stopping the recording worker, stopping the saving worker
@@ -485,6 +486,8 @@ namespace KinectServer
         private void btCalibrate_Click(object sender, EventArgs e)
         {
             oServer.Calibrate();
+            UpdateShowLiveButtonState();
+            UpdateButtonStates(); // Add this line to update button states after calibration
         }
 
         private void btRefineCalib_Click(object sender, EventArgs e)
@@ -508,24 +511,48 @@ namespace KinectServer
                 updateWorker.RunWorkerAsync();
         }
 
-        private void btShowLive_Click(object sender, EventArgs e)
-        {            
-            RestartUpdateWorker();
-
-            //Opens the live view window if it is not open yet.
-            if (!OpenGLWorker.IsBusy)
-                OpenGLWorker.RunWorkerAsync();
+        // Add this method to MainWindowForm.cs
+        private void UpdateShowLiveButtonState()
+        {
+            if (oServer.bAllCalibrated)
+            {
+                btShowLive.Text = "Show live";
+            }
+            else
+            {
+                btShowLive.Text = "Calibrate";
+            }
         }
 
-        public void SetStatusBarOnTimer(string message, int milliseconds)
+        // Modify the btShowLive_Click method in MainWindowForm.cs
+        private void btShowLive_Click(object sender, EventArgs e)
+        {
+            if (oServer.bAllCalibrated)
+            {
+                // Original functionality - show live view
+                RestartUpdateWorker();
+
+                // Opens the live view window if it is not open yet.
+                if (!OpenGLWorker.IsBusy)
+                    OpenGLWorker.RunWorkerAsync();
+            }
+            else
+            {
+                // If not all devices are calibrated, perform calibration instead
+                oServer.Calibrate();
+            }
+        }
+
+        public void SetStatusBarOnTimer(string message, int milliseconds, bool bForce = false)
         {
             statusLabel.Text = message;
 
             oStatusBarTimer.Stop();
             oStatusBarTimer = new System.Timers.Timer();
 
-            oStatusBarTimer.Interval = milliseconds;
-            oStatusBarTimer.Elapsed += delegate(object sender, System.Timers.ElapsedEventArgs e)
+            // Ensure the interval is at least 1ms to avoid ArgumentException
+            oStatusBarTimer.Interval = Math.Max(1, milliseconds);
+            oStatusBarTimer.Elapsed += delegate (object sender, System.Timers.ElapsedEventArgs e)
             {
                 oStatusBarTimer.Stop();
                 statusLabel.Text = "";
@@ -533,7 +560,54 @@ namespace KinectServer
             oStatusBarTimer.Start();
         }
 
-        //Updates the ListBox contaning the connected clients, called by events inside KinectServer.
+        // Add this new method to handle button state management
+        private void UpdateButtonStates()
+        {
+            // Check if there are no clients connected
+            if (oServer.nClientCount == 0)
+            {
+                // Disable all operation buttons
+                btCalibrate.Enabled = false;
+                btRefineCalib.Enabled = false;
+                btRecord.Enabled = false;
+                btShowLive.Enabled = false;
+                
+                // Show connecting status message
+                SetStatusBarOnTimer("Connecting to clients...", 60000, true);
+                return;
+            }
+
+            // If we're recording or saving, don't update button states
+            if (bRecording || bSaving)
+                return;
+
+            // Enable record button if at least one client is connected
+            btRecord.Enabled = true;
+
+            // Show Live button is always enabled when clients are connected
+            btShowLive.Enabled = true;
+            
+            // Enable calibrate button only if all clients are calibrated
+            btCalibrate.Enabled = oServer.bAllCalibrated;
+            
+            // Refine calibration requires at least 2 clients and all must be calibrated
+            btRefineCalib.Enabled = (oServer.nClientCount >= 2 && oServer.bAllCalibrated);
+
+            // Clear status message if it was showing "Connecting to clients..."
+            if (statusLabel.Text == "Connecting to clients...")
+            {
+                if (!oServer.bAllCalibrated)
+                {
+                    SetStatusBarOnTimer("Waiting for clients to calibrate...", 60000, true);
+                }
+                else
+                {
+                    statusLabel.Text = "";
+                }
+            }
+        }
+
+        // Modify the UpdateListView method to call UpdateButtonStates
         private void UpdateListView(List<KinectSocket> socketList)
         {
             List<string> listBoxItems = new List<string>();
@@ -541,8 +615,10 @@ namespace KinectServer
             for (int i = 0; i < socketList.Count; i++)
                 listBoxItems.Add(socketList[i].sSocketState);
 
-
             lClientListBox.DataSource = listBoxItems;
+
+            UpdateShowLiveButtonState();
+            UpdateButtonStates(); // Add this line to update button states whenever the client list changes
         }
 
         private void lbSeqName_Click(object sender, EventArgs e)
