@@ -1,4 +1,4 @@
-﻿Shader "Custom/GS Billboard HoloLens2"
+﻿Shader "Custom/GS Billboard"
 {
     Properties
     {

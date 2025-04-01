@@ -2,12 +2,16 @@
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using static Fusion.NetworkObjectBaker.TransformPath;
 
 public class ElemRenderer : MonoBehaviour
 {
     private Mesh mesh;
     private WebRTCManager webRTCManager;
+
+    private float timeSinceLastRender = 0.0f;
+    private float totalTime = 0.0f;
+    private float averageFPS = 0.0f;
+    private int numFrames = 0;
 
     void Start()
     {
@@ -25,6 +29,8 @@ public class ElemRenderer : MonoBehaviour
 
     void Update()
     {
+        timeSinceLastRender += Time.deltaTime;
+
         if (webRTCManager.HasNewPointCloud())
         {
             Vector3[] vertices;
@@ -45,6 +51,12 @@ public class ElemRenderer : MonoBehaviour
             mesh.colors = colors;
             mesh.SetIndices(indices, MeshTopology.Points, 0);
             GetComponent<MeshFilter>().mesh = mesh;
+
+            totalTime += timeSinceLastRender;
+            timeSinceLastRender = 0.0f;
+            numFrames++;
+            averageFPS = numFrames / totalTime;
+            //Debug.Log("Average FPS: " + averageFPS);
         }
     }
 }

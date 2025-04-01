@@ -20,7 +20,7 @@ public class DocumentPictureReceiver : NetworkBehaviour
     private Thread listenerThread;
     private bool isRunning = false;
     private float lastImageTime = 0f;
-    private const float IMAGE_TIMEOUT = 10f;
+    private const float IMAGE_TIMEOUT = 30f;
 
     private byte[] receivedImageData;
     [Networked] private int receivedImageWidth { get; set; }
