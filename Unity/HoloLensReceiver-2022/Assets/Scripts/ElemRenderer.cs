@@ -7,6 +7,7 @@ public class ElemRenderer : MonoBehaviour
 {
     private Mesh mesh;
     private WebRTCManager webRTCManager;
+    public Material pointCloudMaterial;
 
     private float timeSinceLastRender = 0.0f;
     private float totalTime = 0.0f;
@@ -33,6 +34,15 @@ public class ElemRenderer : MonoBehaviour
         if (startedCounter)
         {
             timeSinceLastRender += Time.deltaTime;
+        }
+
+        if (pointCloudMaterial != null)
+        {
+            // Set camera position
+            pointCloudMaterial.SetVector("_CameraPosition", Camera.main.transform.position);
+
+            // Set camera rotation (localToWorldMatrix for correct orientation)
+            pointCloudMaterial.SetMatrix("_CameraRotation", Camera.main.transform.localToWorldMatrix);
         }
 
         if (webRTCManager.HasNewPointCloud())

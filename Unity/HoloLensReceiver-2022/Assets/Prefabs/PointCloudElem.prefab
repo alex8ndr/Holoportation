@@ -98,8 +98,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5fe88d387a3864240bca3acfa53ca38b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  numPoints: 20000
-  pointSize: 0.01
+  pointCloudMaterial: {fileID: 2100000, guid: a625f06348ad67b4bac4e6aac3264b35, type: 2}
 --- !u!114 &7260786953554719222
 MonoBehaviour:
   m_ObjectHideFlags: 0

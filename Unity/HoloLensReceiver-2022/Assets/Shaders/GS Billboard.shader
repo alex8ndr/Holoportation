@@ -14,17 +14,17 @@
 
             CGPROGRAM
             #pragma target 5.0
-            #pragma multi_compile_instancing // Required for HoloLens 2 single-pass instanced rendering
+            #pragma multi_compile_instancing
+            #pragma require geometry
             #pragma vertex VS_Main
-            #pragma fragment FS_Main
             #pragma geometry GS_Main
+            #pragma fragment FS_Main
             #include "UnityCG.cginc"
 
             struct GS_INPUT
             {
                 float4 pos : POSITION;
                 float4 col : COLOR;
-                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct FS_INPUT
@@ -34,17 +34,15 @@
             };
 
             float _PointSize;
+            float3 _CameraPosition;
+            float4x4 _CameraRotation;
 
             // Vertex Shader
             GS_INPUT VS_Main(appdata_full v)
             {
                 GS_INPUT output;
-                UNITY_SETUP_INSTANCE_ID(v); // Ensure instance ID is passed correctly
-                UNITY_TRANSFER_INSTANCE_ID(v, output);
-
                 output.pos = mul(unity_ObjectToWorld, v.vertex); // Convert to world space
                 output.col = v.color;
-
                 return output;
             }
 
@@ -52,16 +50,14 @@
             [maxvertexcount(4)]
             void GS_Main(point GS_INPUT p[1], inout TriangleStream<FS_INPUT> triStream)
             {
-                UNITY_SETUP_INSTANCE_ID(p[0]); // Ensure instance ID is used properly
+                // Use passed camera position
+                float3 camPos = _CameraPosition;
 
-                // Extract camera position from UNITY_MATRIX_I_V
-                float3 camPos = float3(UNITY_MATRIX_I_V._m03, UNITY_MATRIX_I_V._m13, UNITY_MATRIX_I_V._m23);
-
-                // Billboard alignment
-                float3 up = float3(0, 1, 0);
-                float3 look = normalize(camPos - p[0].pos.xyz); // Correct view-dependent positioning
-                float3 right = normalize(cross(up, look));
-                up = cross(look, right); // Ensure correct perpendicularity
+                // Compute correct view-dependent billboard orientation
+                float3 up = normalize(_CameraRotation._m10_m11_m12);   // Extract UP vector from rotation matrix
+                float3 look = normalize(camPos - p[0].pos.xyz);        // View direction
+                float3 right = normalize(cross(up, look));             // Compute right vector
+                up = cross(look, right);                               // Recalculate up to ensure orthogonality
 
                 float halfS = 0.5f * _PointSize;
 
@@ -80,7 +76,7 @@
                     triStream.Append(pOut);
                 }
 
-                triStream.RestartStrip(); // Ensure proper triangle strip handling
+                triStream.RestartStrip();
             }
 
             // Fragment Shader
