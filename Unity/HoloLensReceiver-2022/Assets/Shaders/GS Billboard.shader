@@ -14,7 +14,6 @@
 
             CGPROGRAM
             #pragma target 5.0
-            #pragma multi_compile_instancing
             #pragma require geometry
             #pragma vertex VS_Main
             #pragma geometry GS_Main
@@ -25,6 +24,8 @@
             {
                 float4 pos : POSITION;
                 float4 col : COLOR;
+                float3 right : TEXCOORD0;
+                float3 up : TEXCOORD1;
             };
 
             struct FS_INPUT
@@ -34,15 +35,19 @@
             };
 
             float _PointSize;
-            float3 _CameraPosition;
-            float4x4 _CameraRotation;
 
-            // Vertex Shader
+            // Vertex Shader (Precompute billboard orientation)
             GS_INPUT VS_Main(appdata_full v)
             {
                 GS_INPUT output;
-                output.pos = mul(unity_ObjectToWorld, v.vertex); // Convert to world space
+                output.pos = mul(unity_ObjectToWorld, v.vertex); 
                 output.col = v.color;
+
+                float3 camPos = _WorldSpaceCameraPos;
+                float3 look = normalize(camPos - output.pos.xyz);
+                output.right = normalize(cross(float3(0, 1, 0), look));
+                output.up = normalize(cross(look, output.right));
+
                 return output;
             }
 
@@ -50,23 +55,12 @@
             [maxvertexcount(4)]
             void GS_Main(point GS_INPUT p[1], inout TriangleStream<FS_INPUT> triStream)
             {
-                // Use passed camera position
-                float3 camPos = _CameraPosition;
-
-                // Compute correct view-dependent billboard orientation
-                float3 up = normalize(_CameraRotation._m10_m11_m12);   // Extract UP vector from rotation matrix
-                float3 look = normalize(camPos - p[0].pos.xyz);        // View direction
-                float3 right = normalize(cross(up, look));             // Compute right vector
-                up = cross(look, right);                               // Recalculate up to ensure orthogonality
-
                 float halfS = 0.5f * _PointSize;
-
-                // Quad corners
                 float3 v[4];
-                v[0] = p[0].pos.xyz + halfS * right - halfS * up;
-                v[1] = p[0].pos.xyz + halfS * right + halfS * up;
-                v[2] = p[0].pos.xyz - halfS * right - halfS * up;
-                v[3] = p[0].pos.xyz - halfS * right + halfS * up;
+                v[0] = p[0].pos.xyz + halfS * p[0].right - halfS * p[0].up;
+                v[1] = p[0].pos.xyz + halfS * p[0].right + halfS * p[0].up;
+                v[2] = p[0].pos.xyz - halfS * p[0].right - halfS * p[0].up;
+                v[3] = p[0].pos.xyz - halfS * p[0].right + halfS * p[0].up;
 
                 FS_INPUT pOut;
                 for (int i = 0; i < 4; i++)

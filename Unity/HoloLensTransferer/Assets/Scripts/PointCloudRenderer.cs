@@ -82,7 +82,8 @@ public class PointCloudRenderer : MonoBehaviour
             VoxelDownsampleSurfaceAware(points.ToList(), colors.ToList(), ref newPoints, ref newColors, voxelSize);
             Debug.Log("Original points: " + points.Length + ", new points: " + newPoints.Count);
 
-            webRTCManager.SendPointCloud(newPoints.ToArray(), newColors.ToArray());
+            //webRTCManager.SendPointCloud(newPoints.ToArray(), newColors.ToArray());
+            webRTCManager.SendPointCloud(points, colors);
 
             offset += nPointsToRender;
         }

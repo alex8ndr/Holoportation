@@ -1,13 +1,20 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using UnityEngine;
 
 public class ElemRenderer : MonoBehaviour
 {
     private Mesh mesh;
+    private Vector3[] vertices;
+    private Color[] colors;
+    private int[] indices;
+
     private WebRTCManager webRTCManager;
     public Material pointCloudMaterial;
+
+    private bool hasNewData = false;
 
     private float timeSinceLastRender = 0.0f;
     private float totalTime = 0.0f;
@@ -18,13 +25,15 @@ public class ElemRenderer : MonoBehaviour
     void Start()
     {
         mesh = new Mesh();
-        GetComponent<MeshFilter>().mesh = mesh;
+        mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32; // Supports large vertex counts
+        mesh.MarkDynamic(); // Marks mesh for frequent updates
 
+        GetComponent<MeshFilter>().mesh = mesh;
         webRTCManager = GameObject.FindObjectOfType<WebRTCManager>();
 
         if (webRTCManager == null)
         {
-            Debug.LogError("WebRTCManager is not assigned!");
+            Debug.LogError("WebRTCManager not found!");
             return;
         }
     }
@@ -38,40 +47,43 @@ public class ElemRenderer : MonoBehaviour
 
         if (pointCloudMaterial != null)
         {
-            // Set camera position
             pointCloudMaterial.SetVector("_CameraPosition", Camera.main.transform.position);
-
-            // Set camera rotation (localToWorldMatrix for correct orientation)
             pointCloudMaterial.SetMatrix("_CameraRotation", Camera.main.transform.localToWorldMatrix);
         }
 
         if (webRTCManager.HasNewPointCloud())
         {
             startedCounter = true;
-            Vector3[] vertices;
-            Color[] colors;
             (vertices, colors) = webRTCManager.GetReceivedPointCloud();
-
-            int[] indices = new int[vertices.Length];
-            for (int i = 0; i < vertices.Length; i++)
-            {
-                indices[i] = i;  // Fill the indices array with the index values
-            }
-
-            if (mesh != null)
-                Destroy(mesh);
-
-            mesh = new Mesh();
-            mesh.vertices = vertices;
-            mesh.colors = colors;
-            mesh.SetIndices(indices, MeshTopology.Points, 0);
-            GetComponent<MeshFilter>().mesh = mesh;
-
-            totalTime += timeSinceLastRender;
-            timeSinceLastRender = 0.0f;
-            numFrames++;
-            averageFPS = numFrames / totalTime;
-            Debug.Log("Average FPS: " + averageFPS);
+            hasNewData = true;
         }
+
+        if (hasNewData)
+        {
+            UpdateMesh();
+            hasNewData = false;
+        }
+    }
+
+    private void UpdateMesh()
+    {
+        int pointCount = vertices.Length;
+        if (indices == null || indices.Length != pointCount)
+        {
+            indices = new int[pointCount];
+            for (int i = 0; i < pointCount; i++) indices[i] = i;
+        }
+
+        mesh.Clear();
+        mesh.vertices = vertices;
+        mesh.colors = colors;
+        mesh.SetIndices(indices, MeshTopology.Points, 0);
+        mesh.UploadMeshData(false); // Keeps GPU memory without reallocation
+
+        totalTime += timeSinceLastRender;
+        timeSinceLastRender = 0.0f;
+        numFrames++;
+        averageFPS = numFrames / totalTime;
+        Debug.Log("Average FPS: " + averageFPS);
     }
 }
