@@ -74,13 +74,13 @@ public class PointCloudRenderer : MonoBehaviour
             }
 
             // Thin the point cloud
-            List<Vector3> newPoints = new List<Vector3>();
-            List<Color> newColors = new List<Color>();
+            //List<Vector3> newPoints = new List<Vector3>();
+            //List<Color> newColors = new List<Color>();
 
-            float voxelSize = 0.005f;
+            //float voxelSize = 0.005f;
 
-            VoxelDownsampleSurfaceAware(points.ToList(), colors.ToList(), ref newPoints, ref newColors, voxelSize);
-            Debug.Log("Original points: " + points.Length + ", new points: " + newPoints.Count);
+            //VoxelDownsampleSurfaceAware(points.ToList(), colors.ToList(), ref newPoints, ref newColors, voxelSize);
+            //Debug.Log("Original points: " + points.Length + ", new points: " + newPoints.Count);
 
             //webRTCManager.SendPointCloud(newPoints.ToArray(), newColors.ToArray());
             webRTCManager.SendPointCloud(points, colors);

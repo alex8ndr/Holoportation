@@ -99,6 +99,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   pointCloudMaterial: {fileID: 2100000, guid: a625f06348ad67b4bac4e6aac3264b35, type: 2}
+  pointSize: 0.004
 --- !u!114 &7260786953554719222
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -1,20 +1,17 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using UnityEngine;
 
 public class ElemRenderer : MonoBehaviour
 {
-    private Mesh mesh;
-    private Vector3[] vertices;
-    private Color[] colors;
-    private int[] indices;
+    private ComputeBuffer pointCloudBuffer;
+    private ComputeBuffer colorBuffer;
+
+    private int numPoints = 0;
 
     private WebRTCManager webRTCManager;
     public Material pointCloudMaterial;
-
-    private bool hasNewData = false;
+    public float pointSize = 0.005f;
 
     private float timeSinceLastRender = 0.0f;
     private float totalTime = 0.0f;
@@ -24,18 +21,19 @@ public class ElemRenderer : MonoBehaviour
 
     void Start()
     {
-        mesh = new Mesh();
-        mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32; // Supports large vertex counts
-        mesh.MarkDynamic(); // Marks mesh for frequent updates
-
-        GetComponent<MeshFilter>().mesh = mesh;
-        webRTCManager = GameObject.FindObjectOfType<WebRTCManager>();
+        webRTCManager = FindObjectOfType<WebRTCManager>();
 
         if (webRTCManager == null)
         {
             Debug.LogError("WebRTCManager not found!");
             return;
         }
+
+        GetComponent<MeshRenderer>().material = pointCloudMaterial;
+
+        InitializeComputeBuffer(30000); // Initial buffer size
+
+        pointCloudMaterial.SetFloat("_PointSize", pointSize * transform.localScale.x);
     }
 
     void Update()
@@ -47,6 +45,7 @@ public class ElemRenderer : MonoBehaviour
 
         if (pointCloudMaterial != null)
         {
+            // Pass camera position and rotation
             pointCloudMaterial.SetVector("_CameraPosition", Camera.main.transform.position);
             pointCloudMaterial.SetMatrix("_CameraRotation", Camera.main.transform.localToWorldMatrix);
         }
@@ -54,36 +53,75 @@ public class ElemRenderer : MonoBehaviour
         if (webRTCManager.HasNewPointCloud())
         {
             startedCounter = true;
-            (vertices, colors) = webRTCManager.GetReceivedPointCloud();
-            hasNewData = true;
-        }
-
-        if (hasNewData)
-        {
-            UpdateMesh();
-            hasNewData = false;
+            var (points, colors) = webRTCManager.GetReceivedPointCloud();
+            var colorData = ConvertToVector3Array(colors);
+            UpdateComputeBuffer(points, colorData);
         }
     }
 
-    private void UpdateMesh()
+    private void InitializeComputeBuffer(int maxPoints)
     {
-        int pointCount = vertices.Length;
-        if (indices == null || indices.Length != pointCount)
+        // Store 12 bytes per point (Vector3) for positions (x, y, z)
+        pointCloudBuffer = new ComputeBuffer(maxPoints, sizeof(float) * 3, ComputeBufferType.Default);
+
+        // Store 12 bytes per point (Vector3) for colors (r, g, b)
+        colorBuffer = new ComputeBuffer(maxPoints, sizeof(float) * 3, ComputeBufferType.Default);
+
+        pointCloudMaterial.SetBuffer("_PointCloudBuffer", pointCloudBuffer);
+        pointCloudMaterial.SetBuffer("_ColorBuffer", colorBuffer);
+    }
+
+    private void UpdateComputeBuffer(Vector3[] newPointData, Vector3[] newColorData)
+    {
+        if (newPointData.Length > pointCloudBuffer.count)
         {
-            indices = new int[pointCount];
-            for (int i = 0; i < pointCount; i++) indices[i] = i;
+            pointCloudBuffer.Release();
+            colorBuffer.Release();
+            InitializeComputeBuffer(newPointData.Length);
         }
 
-        mesh.Clear();
-        mesh.vertices = vertices;
-        mesh.colors = colors;
-        mesh.SetIndices(indices, MeshTopology.Points, 0);
-        mesh.UploadMeshData(false); // Keeps GPU memory without reallocation
+        // Set the data for both point positions and colors
+        pointCloudBuffer.SetData(newPointData);
+        colorBuffer.SetData(newColorData);
+
+        numPoints = newPointData.Length;
+        pointCloudMaterial.SetInt("_NumPoints", numPoints);
 
         totalTime += timeSinceLastRender;
         timeSinceLastRender = 0.0f;
         numFrames++;
         averageFPS = numFrames / totalTime;
         Debug.Log("Average FPS: " + averageFPS);
+    }
+
+    private Vector3[] ConvertToVector3Array(Color[] colors)
+    {
+        int length = colors.Length;
+        Vector3[] pointData = new Vector3[length];
+
+        for (int i = 0; i < length; i++)
+        {
+            // Store the color in a Vector3 with r, g, b
+            pointData[i] = new Vector3(colors[i].r, colors[i].g, colors[i].b);
+        }
+
+        return pointData;
+    }
+
+    void OnRenderObject()
+    {
+        if (pointCloudMaterial == null || pointCloudBuffer == null || numPoints == 0)
+            return;
+
+        pointCloudMaterial.SetPass(0);
+        Graphics.DrawProceduralNow(MeshTopology.Points, numPoints);
+    }
+
+    private void OnDestroy()
+    {
+        if (pointCloudBuffer != null)
+        {
+            pointCloudBuffer.Release();
+        }
     }
 }
