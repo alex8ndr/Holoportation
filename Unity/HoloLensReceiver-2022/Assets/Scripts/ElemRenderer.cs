@@ -30,7 +30,10 @@ public class ElemRenderer : MonoBehaviour
             return;
         }
 
-        pointCloudComputeShader = Resources.Load<ComputeShader>("PointCloudCompute");
+        pointCloudComputeShader = Resources.Load<ComputeShader>("PointCloudComputeShader");
+
+        if (pointCloudComputeShader == null)
+            Debug.LogError("Compute shader not loaded!");
 
         InitializeComputeBuffer(30000); // Initial buffer size
 
@@ -114,6 +117,18 @@ public class ElemRenderer : MonoBehaviour
 
     private void DispatchComputeShader()
     {
+        if (pointCloudComputeShader == null)
+        {
+            Debug.LogError("Compute shader is null!");
+            return;
+        }
+
+        if (pointCloudBuffer == null || colorBuffer == null)
+        {
+            Debug.LogError("Compute buffers are null! Skipping compute shader dispatch.");
+            return;
+        }
+
         int kernelHandle = pointCloudComputeShader.FindKernel("CSMain");
 
         pointCloudComputeShader.SetBuffer(kernelHandle, "_PointCloudBuffer", pointCloudBuffer);
