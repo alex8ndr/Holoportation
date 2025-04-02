@@ -14,22 +14,21 @@ public class CameraController : MonoBehaviour
         float horizontal = Input.GetAxis("Horizontal"); // Left/Right (A/D)
         float vertical = Input.GetAxis("Vertical");     // Forward/Backward (W/S)
 
-        // Move the camera forward/backward and left/right
-        Vector3 direction = new Vector3(horizontal, 0, vertical);
-        transform.Translate(direction * speed * Time.deltaTime, Space.World);
+        // Move the camera relative to its own forward and right direction
+        Vector3 moveDirection = transform.right * horizontal + transform.forward * vertical;
+        transform.position += moveDirection * speed * Time.deltaTime;
 
         // Optional: Move the camera up/down with Q/E keys
         if (Input.GetKey(KeyCode.Q)) // Move up
         {
-            transform.Translate(Vector3.up * speed * Time.deltaTime);
+            transform.position += Vector3.up * speed * Time.deltaTime;
         }
         if (Input.GetKey(KeyCode.E)) // Move down
         {
-            transform.Translate(Vector3.down * speed * Time.deltaTime);
+            transform.position += Vector3.down * speed * Time.deltaTime;
         }
 
         // Mouse-based camera rotation (rotation around X and Y axes)
-        // Get the mouse input
         float mouseX = Input.GetAxis("Mouse X");
         float mouseY = Input.GetAxis("Mouse Y");
 
