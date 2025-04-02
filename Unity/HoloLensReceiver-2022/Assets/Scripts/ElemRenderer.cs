@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
@@ -31,7 +32,7 @@ public class ElemRenderer : MonoBehaviour
 
         GetComponent<MeshRenderer>().material = pointCloudMaterial;
 
-        InitializeComputeBuffer(30000); // Initial buffer size
+        InitializeComputeBuffer(100000); // Initial buffer size
 
         pointCloudMaterial.SetFloat("_PointSize", pointSize * transform.localScale.x);
     }
@@ -48,6 +49,9 @@ public class ElemRenderer : MonoBehaviour
             // Pass camera position and rotation
             pointCloudMaterial.SetVector("_CameraPosition", Camera.main.transform.position);
             pointCloudMaterial.SetMatrix("_CameraRotation", Camera.main.transform.localToWorldMatrix);
+
+            pointCloudMaterial.SetBuffer("_PointCloudBuffer", pointCloudBuffer);
+            pointCloudMaterial.SetBuffer("_ColorBuffer", colorBuffer);
         }
 
         if (webRTCManager.HasNewPointCloud())
@@ -55,7 +59,7 @@ public class ElemRenderer : MonoBehaviour
             startedCounter = true;
             var (points, colors) = webRTCManager.GetReceivedPointCloud();
             var colorData = ConvertToVector3Array(colors);
-            UpdateComputeBuffer(points, colorData);
+            StartCoroutine(UpdateBuffersWithDelay(points, colorData));
         }
     }
 
@@ -71,20 +75,27 @@ public class ElemRenderer : MonoBehaviour
         pointCloudMaterial.SetBuffer("_ColorBuffer", colorBuffer);
     }
 
+    IEnumerator UpdateBuffersWithDelay(Vector3[] points, Vector3[] colors)
+    {
+        yield return null; // Just delay by one frame (prevents race conditions)
+        UpdateComputeBuffer(points, colors);
+    }
+
     private void UpdateComputeBuffer(Vector3[] newPointData, Vector3[] newColorData)
     {
-        if (newPointData.Length > pointCloudBuffer.count)
-        {
-            pointCloudBuffer.Release();
-            colorBuffer.Release();
-            InitializeComputeBuffer(newPointData.Length);
-        }
+        // If too many points, discard extra but don't reallocate
+        int clampedCount = Mathf.Min(newPointData.Length, pointCloudBuffer.count);
 
-        // Set the data for both point positions and colors
-        pointCloudBuffer.SetData(newPointData);
-        colorBuffer.SetData(newColorData);
+        Vector3[] paddedPoints = new Vector3[pointCloudBuffer.count];
+        Vector3[] paddedColors = new Vector3[colorBuffer.count];
 
-        numPoints = newPointData.Length;
+        System.Array.Copy(newPointData, paddedPoints, clampedCount);
+        System.Array.Copy(newColorData, paddedColors, clampedCount);
+
+        pointCloudBuffer.SetData(paddedPoints);
+        colorBuffer.SetData(paddedColors);
+
+        numPoints = clampedCount;
         pointCloudMaterial.SetInt("_NumPoints", numPoints);
 
         totalTime += timeSinceLastRender;
