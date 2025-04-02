@@ -12,6 +12,7 @@ public class ElemRenderer : MonoBehaviour
     private float totalTime = 0.0f;
     private float averageFPS = 0.0f;
     private int numFrames = 0;
+    private bool startedCounter = false;
 
     void Start()
     {
@@ -29,10 +30,14 @@ public class ElemRenderer : MonoBehaviour
 
     void Update()
     {
-        timeSinceLastRender += Time.deltaTime;
+        if (startedCounter)
+        {
+            timeSinceLastRender += Time.deltaTime;
+        }
 
         if (webRTCManager.HasNewPointCloud())
         {
+            startedCounter = true;
             Vector3[] vertices;
             Color[] colors;
             (vertices, colors) = webRTCManager.GetReceivedPointCloud();

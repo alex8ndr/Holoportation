@@ -14,6 +14,7 @@
 
             CGPROGRAM
             #pragma target 5.0
+            #pragma multi_compile_instancing // Required for HoloLens 2 single-pass instanced rendering
             #pragma vertex VS_Main
             #pragma fragment FS_Main
             #pragma geometry GS_Main
@@ -23,6 +24,7 @@
             {
                 float4 pos : POSITION;
                 float4 col : COLOR;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct FS_INPUT
@@ -37,8 +39,12 @@
             GS_INPUT VS_Main(appdata_full v)
             {
                 GS_INPUT output;
+                UNITY_SETUP_INSTANCE_ID(v); // Ensure instance ID is passed correctly
+                UNITY_TRANSFER_INSTANCE_ID(v, output);
+
                 output.pos = mul(unity_ObjectToWorld, v.vertex); // Convert to world space
                 output.col = v.color;
+
                 return output;
             }
 
@@ -46,13 +52,16 @@
             [maxvertexcount(4)]
             void GS_Main(point GS_INPUT p[1], inout TriangleStream<FS_INPUT> triStream)
             {
-                // Get correct camera position per eye
-                float3 camPos = UNITY_MATRIX_V[3].xyz;
+                UNITY_SETUP_INSTANCE_ID(p[0]); // Ensure instance ID is used properly
+
+                // Extract camera position from UNITY_MATRIX_I_V
+                float3 camPos = float3(UNITY_MATRIX_I_V._m03, UNITY_MATRIX_I_V._m13, UNITY_MATRIX_I_V._m23);
 
                 // Billboard alignment
                 float3 up = float3(0, 1, 0);
-                float3 look = normalize(p[0].pos.xyz - camPos);
+                float3 look = normalize(camPos - p[0].pos.xyz); // Correct view-dependent positioning
                 float3 right = normalize(cross(up, look));
+                up = cross(look, right); // Ensure correct perpendicularity
 
                 float halfS = 0.5f * _PointSize;
 
