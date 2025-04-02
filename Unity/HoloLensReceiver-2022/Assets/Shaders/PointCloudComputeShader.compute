@@ -1,48 +1,31 @@
-// Compute Shader: Efficient Point Cloud Rendering
-// This shader preprocesses the point cloud on the GPU and expands them into billboards efficiently
-
+// Compute shader for processing the point cloud data
 #pragma kernel CSMain
 
-RWStructuredBuffer<float3> PositionBuffer;
-RWStructuredBuffer<float4> ColorBuffer;
-RWStructuredBuffer<float4> BillboardVertices;
-RWStructuredBuffer<float4> BillboardColors;
+// Buffers to store point cloud data
+RWStructuredBuffer<float3> _PointCloudBuffer; // Position
+RWStructuredBuffer<float3> _ColorBuffer; // Color
 
-cbuffer Params
-{
-    float4x4 ViewProjection;
-    float3 CameraPos;
-    float PointSize;
-    uint NumPoints;
-};
+// Camera position (for any transformation logic)
+float3 _CameraPosition;
 
-[numthreads(256, 1, 1)]
-void CSMain(uint id : SV_DispatchThreadID)
+[numthreads(64, 1, 1)] // Process in batches of 64 points at a time
+void CSMain(uint3 id : SV_DispatchThreadID)
 {
-    if (id >= NumPoints)
+    if (id.x >= _PointCloudBuffer.Length)
         return;
 
-    float3 pos = PositionBuffer[id];
-    float4 col = ColorBuffer[id];
+    // Retrieve the position and color for the current point
+    float3 pos = _PointCloudBuffer[id.x];
+    float3 col = _ColorBuffer[id.x];
 
-    // Compute billboard vectors
-    float3 up = float3(0, 1, 0);
-    float3 look = normalize(pos - CameraPos);
-    float3 right = normalize(cross(up, look));
-    float halfSize = PointSize * 0.5f;
-    
-    float3 offsets[4] =
-    {
-        -right * halfSize - up * halfSize,
-         right * halfSize - up * halfSize,
-        -right * halfSize + up * halfSize,
-         right * halfSize + up * halfSize
-    };
+    // Simple transformation or any other logic can go here
+    // (e.g., transforming points, applying camera-related logic)
 
-    // Store expanded billboard positions and colors
-    for (int i = 0; i < 4; i++)
-    {
-        BillboardVertices[id * 4 + i] = float4(pos + offsets[i], 1.0f);
-        BillboardColors[id * 4 + i] = col;
-    }
+    // Optionally, apply some effect based on position or camera distance
+    float distanceToCamera = length(_CameraPosition - pos);
+    col *= saturate(1.0f - distanceToCamera * 0.05f); // Simple fading effect by distance
+
+    // Write the transformed data back to the buffers
+    _PointCloudBuffer[id.x] = pos;
+    _ColorBuffer[id.x] = col;
 }
