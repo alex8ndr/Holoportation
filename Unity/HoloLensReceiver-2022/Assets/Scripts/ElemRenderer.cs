@@ -1,12 +1,11 @@
 ﻿using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 
 public class ElemRenderer : MonoBehaviour
 {
     private ComputeBuffer pointCloudBuffer;
     private ComputeBuffer colorBuffer;
-
-    private ComputeShader pointCloudComputeShader; // Reference to the compute shader
 
     private int numPoints = 0;
 
@@ -30,7 +29,7 @@ public class ElemRenderer : MonoBehaviour
             return;
         }
 
-        pointCloudComputeShader = Resources.Load<ComputeShader>("PointCloudCompute");
+        GetComponent<MeshRenderer>().material = pointCloudMaterial;
 
         InitializeComputeBuffer(30000); // Initial buffer size
 
@@ -58,9 +57,6 @@ public class ElemRenderer : MonoBehaviour
             var colorData = ConvertToVector3Array(colors);
             UpdateComputeBuffer(points, colorData);
         }
-
-        // Dispatch the compute shader to process the point cloud data
-        DispatchComputeShader();
     }
 
     private void InitializeComputeBuffer(int maxPoints)
@@ -112,19 +108,6 @@ public class ElemRenderer : MonoBehaviour
         return pointData;
     }
 
-    private void DispatchComputeShader()
-    {
-        int kernelHandle = pointCloudComputeShader.FindKernel("CSMain");
-
-        pointCloudComputeShader.SetBuffer(kernelHandle, "_PointCloudBuffer", pointCloudBuffer);
-        pointCloudComputeShader.SetBuffer(kernelHandle, "_ColorBuffer", colorBuffer);
-        pointCloudComputeShader.SetVector("_CameraPosition", Camera.main.transform.position);
-
-        // Dispatch the compute shader (run it in parallel across all points)
-        int threadGroups = Mathf.CeilToInt(numPoints / 64.0f);
-        pointCloudComputeShader.Dispatch(kernelHandle, threadGroups, 1, 1);
-    }
-
     void OnRenderObject()
     {
         if (pointCloudMaterial == null || pointCloudBuffer == null || numPoints == 0)
@@ -139,11 +122,6 @@ public class ElemRenderer : MonoBehaviour
         if (pointCloudBuffer != null)
         {
             pointCloudBuffer.Release();
-        }
-
-        if (colorBuffer != null)
-        {
-            colorBuffer.Release();
         }
     }
 }
