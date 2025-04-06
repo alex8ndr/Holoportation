@@ -201,4 +201,22 @@
     </PropertyGroup>
     <Error Condition="!Exists('..\packages\Microsoft.Azure.Kinect.Sensor.1.4.1\build\native\Microsoft.Azure.Kinect.Sensor.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Microsoft.Azure.Kinect.Sensor.1.4.1\build\native\Microsoft.Azure.Kinect.Sensor.targets'))" />
   </Target>
+  
+  <!-- Custom target to swap Azure Kinect DLLs with Orbbec wrapper DLLs -->
+  <Target Name="SwapDLLs" AfterTargets="CopyFilesToOutputDirectory">
+    <!-- Delete original NuGet DLLs -->
+    <Delete Files="$(OutDir)k4a.dll;$(OutDir)k4arecord.dll;$(OutDir)depthengine_2_0.dll" />
+    
+    <!-- Copy custom DLLs from Orbbec wrapper location -->
+    <Copy SourceFiles="$(SolutionDir)lib\orbbec\k4a.dll" 
+          DestinationFolder="$(OutDir)" />
+    <Copy SourceFiles="$(SolutionDir)lib\orbbec\k4arecord.dll" 
+          DestinationFolder="$(OutDir)" 
+          Condition="Exists('$(SolutionDir)lib\orbbec\k4arecord.dll')" />
+    <Copy SourceFiles="$(SolutionDir)lib\orbbec\depthengine_2_0.dll" 
+          DestinationFolder="$(OutDir)" 
+          Condition="Exists('$(SolutionDir)lib\orbbec\depthengine_2_0.dll')" />
+          
+    <Message Text="Azure Kinect DLLs successfully replaced with Orbbec wrapper DLLs" Importance="high" />
+  </Target>
 </Project>
