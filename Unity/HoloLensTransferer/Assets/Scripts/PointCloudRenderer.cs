@@ -14,6 +14,9 @@ public class PointCloudRenderer : MonoBehaviour
 
     public WebRTCManager webRTCManager;
 
+    List<Vector3> newPoints = new List<Vector3>();
+    List<Color> newColors = new List<Color>();
+
     void Start()
     {
         //elems = new List<GameObject>();
@@ -74,16 +77,16 @@ public class PointCloudRenderer : MonoBehaviour
             }
 
             // Thin the point cloud
-            //List<Vector3> newPoints = new List<Vector3>();
-            //List<Color> newColors = new List<Color>();
+            newPoints.Clear();
+            newColors.Clear();
 
-            //float voxelSize = 0.005f;
+            float voxelSize = 0.01f;
 
-            //VoxelDownsampleSurfaceAware(points.ToList(), colors.ToList(), ref newPoints, ref newColors, voxelSize);
-            //Debug.Log("Original points: " + points.Length + ", new points: " + newPoints.Count);
+            VoxelNoiseReduction(points, colors, ref newPoints, ref newColors, voxelSize);
+            Debug.Log("Original points: " + points.Length + ", new points: " + newPoints.Count);
 
-            //webRTCManager.SendPointCloud(newPoints.ToArray(), newColors.ToArray());
-            webRTCManager.SendPointCloud(points, colors);
+            webRTCManager.SendPointCloud(newPoints.ToArray(), newColors.ToArray());
+            //webRTCManager.SendPointCloud(points, colors);
 
             offset += nPointsToRender;
         }
@@ -100,6 +103,51 @@ public class PointCloudRenderer : MonoBehaviour
     void RemoveElems(int nElems)
     {
         webRTCManager.DestroyNetworkObjects(nElems);
+    }
+
+    public void VoxelNoiseReduction(
+        Vector3[] originalPoints,
+        Color[] originalColors,
+        ref List<Vector3> newPoints,
+        ref List<Color> newColors,
+        float voxelSize,
+        int minPointsThreshold = 2
+    )
+    {
+        var voxelCounts = new Dictionary<Vector3Int, int>();
+
+        // Pass 1: Count points per voxel
+        for (int i = 0; i < originalPoints.Length; i++)
+        {
+            Vector3 point = originalPoints[i];
+            Vector3Int voxelKey = new Vector3Int(
+                Mathf.FloorToInt(point.x / voxelSize),
+                Mathf.FloorToInt(point.y / voxelSize),
+                Mathf.FloorToInt(point.z / voxelSize)
+            );
+
+            if (voxelCounts.ContainsKey(voxelKey))
+                voxelCounts[voxelKey]++;
+            else
+                voxelCounts[voxelKey] = 1;
+        }
+
+        // Pass 2: Only add points from valid voxels
+        for (int i = 0; i < originalPoints.Length; i++)
+        {
+            Vector3 point = originalPoints[i];
+            Vector3Int voxelKey = new Vector3Int(
+                Mathf.FloorToInt(point.x / voxelSize),
+                Mathf.FloorToInt(point.y / voxelSize),
+                Mathf.FloorToInt(point.z / voxelSize)
+            );
+
+            if (voxelCounts.TryGetValue(voxelKey, out int count) && count >= minPointsThreshold)
+            {
+                newPoints.Add(point);
+                newColors.Add(originalColors[i]);
+            }
+        }
     }
 
     public void VoxelDownsampleSurfaceAware(
