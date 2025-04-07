@@ -14,8 +14,8 @@ public class PointCloudRenderer : MonoBehaviour
 
     public WebRTCManager webRTCManager;
 
-    List<Vector3> newPoints = new List<Vector3>();
-    List<Color> newColors = new List<Color>();
+    //List<Vector3> newPoints = new List<Vector3>();
+    //List<Color> newColors = new List<Color>();
 
     void Start()
     {
@@ -77,16 +77,16 @@ public class PointCloudRenderer : MonoBehaviour
             }
 
             // Thin the point cloud
-            newPoints.Clear();
-            newColors.Clear();
+            //newPoints.Clear();
+            //newColors.Clear();
 
-            float voxelSize = 0.01f;
+            //float voxelSize = 0.01f;
 
-            VoxelNoiseReduction(points, colors, ref newPoints, ref newColors, voxelSize);
-            Debug.Log("Original points: " + points.Length + ", new points: " + newPoints.Count);
+            //VoxelNoiseReduction(points, colors, ref newPoints, ref newColors, voxelSize);
+            //Debug.Log("Original points: " + points.Length + ", new points: " + newPoints.Count);
 
-            webRTCManager.SendPointCloud(newPoints.ToArray(), newColors.ToArray());
-            //webRTCManager.SendPointCloud(points, colors);
+            //webRTCManager.SendPointCloud(newPoints.ToArray(), newColors.ToArray());
+            webRTCManager.SendPointCloud(points, colors);
 
             offset += nPointsToRender;
         }

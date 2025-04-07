@@ -7,15 +7,14 @@ using System.Net.Sockets;
 using System.Threading;
 using UnityEngine;
 
-public class DocumentPictureReceiver : NetworkBehaviour
+public class DocumentPictureReceiver : MonoBehaviour
 {
-    public string serverIP = "127.0.0.1";
+    public string serverIP = "10.69.55.216";
     public int port = 48004;
     public Renderer targetRenderer;
     public float maxImageSize = 3.0f;
     public float minImageSize = 1.0f;
 
-    private WebRTCManager webRTCManager;
     private TcpListener listener;
     private Thread listenerThread;
     private bool isRunning = false;
@@ -23,8 +22,6 @@ public class DocumentPictureReceiver : NetworkBehaviour
     private const float IMAGE_TIMEOUT = 30f;
 
     private byte[] receivedImageData;
-    [Networked] private int receivedImageWidth { get; set; }
-    [Networked] private int receivedImageHeight { get; set; }
     private int newWidth = 0;
     private int newHeight = 0;
 
@@ -35,7 +32,7 @@ public class DocumentPictureReceiver : NetworkBehaviour
 
     private readonly object lockObject = new object(); // Ensure thread safety
 
-    public override void Spawned()
+    void Start()
     {
         if (targetRenderer == null)
         {
@@ -44,14 +41,6 @@ public class DocumentPictureReceiver : NetworkBehaviour
         }
 
         targetRenderer.enabled = false; // Hide initially
-
-        webRTCManager = GameObject.FindObjectOfType<WebRTCManager>();
-
-        if (webRTCManager == null)
-        {
-            Debug.LogError("WebRTCManager is not assigned!");
-            return;
-        }
 
         // Get the current world-space width and height of the plane
         float currentWorldWidth = targetRenderer.localBounds.size.x;
@@ -63,12 +52,64 @@ public class DocumentPictureReceiver : NetworkBehaviour
         // Compute the unit local x-scale and z-scale
         xScaleUnitWidth = (1.0f * localScale.x) / currentWorldWidth;
         zScaleUnitHeight = (1.0f * localScale.z) / currentWorldHeight;
+
+        isRunning = true;
+        listenerThread = new Thread(ListenForImages);
+        listenerThread.IsBackground = true;
+        listenerThread.Start();
+    }
+
+    void ListenForImages()
+    {
+        try
+        {
+            listener = new TcpListener(IPAddress.Any, port);
+            listener.Start();
+            Debug.Log("Listening for images on " + serverIP + ":" + port);
+
+            while (isRunning)
+            {
+                using (TcpClient client = listener.AcceptTcpClient())
+                using (NetworkStream stream = client.GetStream())
+                using (BinaryReader reader = new BinaryReader(stream))
+                {
+                    // Read image dimensions first
+                    int height = reader.ReadInt32();
+                    int width = reader.ReadInt32();
+
+                    // Read image size
+                    int imageSize = reader.ReadInt32();
+                    byte[] imageData = reader.ReadBytes(imageSize);
+
+                    if (imageData.Length > 0)
+                    {
+                        // Store data safely to be processed in the main thread
+                        lock (lockObject)
+                        {
+                            receivedImageData = imageData;
+                            newWidth = width;
+                            newHeight = height;
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("TCP Listener Error: " + e.Message);
+        }
     }
 
     void Update()
     {
+        // Process image only on the main thread
+        if (receivedImageData != null && !isProcessingImage)
+        {
+            isProcessingImage = true;
+        }
+
         // Check that the image was received here and fully sent through WebRTC
-        if (webRTCManager.HasNewDocument())
+        if (isProcessingImage)
         {
             ApplyTexture();
             isProcessingImage = false;
@@ -84,7 +125,7 @@ public class DocumentPictureReceiver : NetworkBehaviour
 
     private void ApplyTexture()
     {
-        byte[] imageData = webRTCManager.GetReceivedDocument(); // Get image data from WebRTCManager
+        byte[] imageData = receivedImageData; // Get image data from WebRTCManager
 
         if (imageData == null || imageData.Length == 0)
         {
@@ -111,9 +152,9 @@ public class DocumentPictureReceiver : NetworkBehaviour
 
     private void AdjustRendererScale()
     {
-        float aspectRatio = (float)receivedImageWidth / (float)receivedImageHeight;
-        float realWidth = (float)receivedImageWidth * pixelToMeter;
-        float realHeight = (float)receivedImageHeight * pixelToMeter;
+        float aspectRatio = (float)newWidth / (float)newHeight;
+        float realWidth = (float)newWidth * pixelToMeter;
+        float realHeight = (float)newHeight * pixelToMeter;
 
         realWidth = Mathf.Clamp(realWidth, minImageSize, maxImageSize);
         realHeight = realWidth / aspectRatio;
@@ -126,11 +167,9 @@ public class DocumentPictureReceiver : NetworkBehaviour
         newScale.z = realHeight * zScaleUnitHeight; // Height
 
         targetRenderer.transform.localScale = newScale;
-
-        Debug.Log($"Adjusted Renderer Scale to: {newScale.x}m x {newScale.z}m (Aspect Ratio: {(float)receivedImageWidth / receivedImageHeight})");
     }
 
-    public override void Despawned(NetworkRunner runner, bool hasState)
+    void OnApplicationQuit()
     {
         isRunning = false;
         listener?.Stop();

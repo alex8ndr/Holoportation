@@ -10,7 +10,6 @@ public class ElemRenderer : MonoBehaviour
 
     private int numPoints = 0;
 
-    private WebRTCManager webRTCManager;
     public Material pointCloudMaterial;
     public float pointSize = 0.005f;
 
@@ -20,6 +19,9 @@ public class ElemRenderer : MonoBehaviour
     private int numFrames = 0;
     private bool startedCounter = false;
 
+    private bool startUpdate = false;
+    private Vector3[] newPoints;
+    private Color[] newColors;
     private bool isUpdating = false;
 
     private Queue<(Vector3[] points, Vector3[] colors)> pointCloudQueue = new Queue<(Vector3[], Vector3[])>();
@@ -27,14 +29,6 @@ public class ElemRenderer : MonoBehaviour
 
     void Start()
     {
-        webRTCManager = FindObjectOfType<WebRTCManager>();
-
-        if (webRTCManager == null)
-        {
-            Debug.LogError("WebRTCManager not found!");
-            return;
-        }
-
         GetComponent<MeshRenderer>().material = pointCloudMaterial;
 
         InitializeComputeBuffer(25000); // Initial buffer size
@@ -59,16 +53,15 @@ public class ElemRenderer : MonoBehaviour
         }
 
         // Enqueue new frame
-        if (webRTCManager.HasNewPointCloud())
+        if (startUpdate)
         {
             startedCounter = true;
-            var (points, colors) = webRTCManager.GetReceivedPointCloud();
-            var colorData = ConvertToVector3Array(colors);
+            var colorData = ConvertToVector3Array(newColors);
 
             if (pointCloudQueue.Count >= maxQueueSize)
                 pointCloudQueue.Dequeue(); // Discard oldest
 
-            pointCloudQueue.Enqueue((points, colorData));
+            pointCloudQueue.Enqueue((newPoints, colorData));
         }
 
         // Dequeue and process one frame per update
@@ -77,6 +70,13 @@ public class ElemRenderer : MonoBehaviour
             var (points, colors) = pointCloudQueue.Dequeue();
             StartCoroutine(UpdateBuffersWithDelay(points, colors));
         }
+    }
+
+    public void TriggerUpdate(Vector3[] newPoints, Color[] newColors)
+    {
+        startUpdate = true;
+        this.newPoints = newPoints;
+        this.newColors = newColors;
     }
 
     private void InitializeComputeBuffer(int maxPoints)
@@ -95,6 +95,13 @@ public class ElemRenderer : MonoBehaviour
         UpdateComputeBuffer(points, colors);
         yield return null;
         isUpdating = false;
+        startUpdate = false;
+
+        totalTime += timeSinceLastRender;
+        timeSinceLastRender = 0.0f;
+        numFrames++;
+        averageFPS = numFrames / totalTime;
+        Debug.Log("Average FPS: " + averageFPS);
     }
 
     private void UpdateComputeBuffer(Vector3[] newPointData, Vector3[] newColorData)
@@ -121,12 +128,6 @@ public class ElemRenderer : MonoBehaviour
 
         numPoints = newPointData.Length;
         pointCloudMaterial.SetInt("_NumPoints", numPoints);
-
-        totalTime += timeSinceLastRender;
-        timeSinceLastRender = 0.0f;
-        numFrames++;
-        averageFPS = numFrames / totalTime;
-        Debug.Log("Average FPS: " + averageFPS);
     }
 
     private Vector3[] ConvertToVector3Array(Color[] colors)

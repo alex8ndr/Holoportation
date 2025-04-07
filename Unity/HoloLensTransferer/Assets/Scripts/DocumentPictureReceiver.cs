@@ -153,8 +153,6 @@ public class DocumentPictureReceiver : NetworkBehaviour
 
     private void SendImageData(byte[] imageData)
     {
-        Debug.Log("Sending image data via WebRTCManager...");
-
         // Send the image using your WebRTCManager's SendDocument function
         webRTCManager.SendDocument(imageData);
     }
@@ -203,8 +201,6 @@ public class DocumentPictureReceiver : NetworkBehaviour
         newScale.z = realHeight * zScaleUnitHeight; // Height
 
         targetRenderer.transform.localScale = newScale;
-
-        Debug.Log($"Adjusted Renderer Scale to: {newScale.x}m x {newScale.z}m (Aspect Ratio: {(float)receivedImageWidth / receivedImageHeight})");
     }
 
     public override void Despawned(NetworkRunner runner, bool hasState)

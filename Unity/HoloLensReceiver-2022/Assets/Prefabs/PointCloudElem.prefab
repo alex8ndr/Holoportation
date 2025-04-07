@@ -116,8 +116,7 @@ MonoBehaviour:
   ObjectInterest: 1
   Flags: 262145
   NestedObjects: []
-  NetworkedBehaviours:
-  - {fileID: 5513085650171893445}
+  NetworkedBehaviours: []
 --- !u!1 &1787503178510128353
 GameObject:
   m_ObjectHideFlags: 0
@@ -239,7 +238,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fcc707840eb207c41955e6a1655ed7c7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  serverIP: 127.0.0.1
+  serverIP: 10.69.55.216
   port: 48004
   targetRenderer: {fileID: 9164001801940079612}
   maxImageSize: 3

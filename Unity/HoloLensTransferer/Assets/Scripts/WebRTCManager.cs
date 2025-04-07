@@ -205,8 +205,6 @@ public class WebRTCManager : NetworkBehaviour
     {
         if (documentChannel != null && documentChannel.State == DataChannel.ChannelState.Open)
         {
-            Debug.Log($"Sending document of size {documentData.Length} bytes...");
-
             // Split the document data into chunks
             var chunks = SplitDataIntoChunks(documentData);
             for (int i = 0; i < chunks.Length; i++)
@@ -228,7 +226,6 @@ public class WebRTCManager : NetworkBehaviour
         if (pointCloudChannel != null && pointCloudChannel.State == DataChannel.ChannelState.Open)
         {
             byte[] data = SerializePointCloud(vertices, colors);
-            Debug.Log($"Sending point cloud with {vertices.Length} points. (Data size: {data.Length} bytes)");
 
             // Split the point cloud data into chunks
             var chunks = SplitDataIntoChunks(data);
@@ -269,8 +266,6 @@ public class WebRTCManager : NetworkBehaviour
     {
         byte[] completionMessage = new byte[] { 1 }; // Flag indicating completion (1 for done)
         channel.SendMessage(completionMessage);
-
-        Debug.Log($"{dataType} transfer complete.");
     }
 
     private byte[] SerializePointCloud(Vector3[] vertices, Color[] colors)
@@ -303,12 +298,7 @@ public class WebRTCManager : NetworkBehaviour
     {
         if (data.Length == 1 && data[0] == 1) // Check for completion flag
         {
-            Debug.Log("Document transfer complete.");
             hasNewDocument = true;
-        }
-        else
-        {
-            Debug.Log($"Received document data of size {data.Length} bytes");
         }
     }
 
@@ -316,12 +306,7 @@ public class WebRTCManager : NetworkBehaviour
     {
         if (data.Length == 1 && data[0] == 1) // Check for completion flag
         {
-            Debug.Log("Point Cloud transfer complete.");
             hasNewPointCloud = true;
-        }
-        else
-        {
-            Debug.Log($"Received point cloud data of size {data.Length} bytes");
         }
     }
 

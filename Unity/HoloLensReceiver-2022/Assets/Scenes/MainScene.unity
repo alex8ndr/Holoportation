@@ -148,7 +148,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 27086144}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 8ba5764f4714bd64ab9efab127938e77, type: 3}
   m_Name: 
@@ -162,7 +162,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 27086144}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 88230848386761045af440d808ee3efa, type: 3}
   m_Name: 
@@ -205,6 +205,8 @@ GameObject:
   - component: {fileID: 305562879}
   - component: {fileID: 305562880}
   - component: {fileID: 305562881}
+  - component: {fileID: 305562883}
+  - component: {fileID: 305562882}
   m_Layer: 0
   m_Name: PhotonFusionManager
   m_TagString: Untagged
@@ -234,7 +236,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 305562878}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 059e543e0f75043b39ff4870ca88b2ad, type: 3}
   m_Name: 
@@ -258,6 +260,37 @@ MonoBehaviour:
   NestedObjects: []
   NetworkedBehaviours:
   - {fileID: 305562880}
+--- !u!114 &305562882
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 305562878}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3a7b919b273ca8e4c83ee75baa7a2b44, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  maxChunkSize: 65535
+  pointSize: 0.005
+  pointCloudElem: {fileID: 1002025039999346, guid: e8af4a42592299a4b9f8a2198af60749, type: 3}
+  pointCloudMaterial: {fileID: 2100000, guid: a625f06348ad67b4bac4e6aac3264b35, type: 2}
+  maxNumElems: 1
+--- !u!114 &305562883
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 305562878}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 72ba8999ddd6a6a4fb8a4a342245f079, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  IPAddress: 10.69.55.216
+  port: 48002
 --- !u!1 &683017650
 GameObject:
   m_ObjectHideFlags: 0
@@ -397,7 +430,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 790107992}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: -1199893898, guid: e725a070cec140c4caffb81624c8c787, type: 3}
   m_Name: 

@@ -189,14 +189,12 @@ public class WebRTCManager : NetworkBehaviour
     {
         if (data.Length == 1 && data[0] == 1) // Check for completion flag
         {
-            Debug.Log("Document transfer complete.");
             documentData = documentBuffer.ToArray();
             hasNewDocument = true;
             documentBuffer.Clear();
         }
         else
         {
-            Debug.Log($"Received document data of size {data.Length} bytes");
             documentBuffer.AddRange(data);
         }
     }
@@ -205,14 +203,12 @@ public class WebRTCManager : NetworkBehaviour
     {
         if (data.Length == 1 && data[0] == 1) // Check for completion flag
         {
-            Debug.Log("Point Cloud transfer complete.");
             DeserializePointCloud(pointCloudBuffer.ToArray(), out receivedVertices, out receivedColors);
             hasNewPointCloud = true;
             pointCloudBuffer.Clear();
         }
         else
         {
-            Debug.Log($"Received point cloud data of size {data.Length} bytes");
             pointCloudBuffer.AddRange(data);
         }
     }
