@@ -17,9 +17,11 @@ public class WebRTCManager : NetworkBehaviour
     // Room management
     private NetworkRunner networkRunner;
     public bool isSender = false; // Set to false for the receiver
+    private List<byte> documentBuffer = new List<byte>();
     private byte[] documentData;
     private bool hasNewDocument = false;
 
+    List<byte> pointCloudBuffer = new List<byte>();
     private Vector3[] receivedVertices;
     private Color[] receivedColors;
     private bool hasNewPointCloud = false;
@@ -182,18 +184,37 @@ public class WebRTCManager : NetworkBehaviour
         peerConnection.AddIceCandidate(candidate);
     }
 
+    // Handling Received Data (For Debugging and Validation)
     private void HandleDocumentMessage(byte[] data)
     {
-        Debug.Log($"Received document data of size {data.Length} bytes");
-        documentData = data;
-        hasNewDocument = true;
+        if (data.Length == 1 && data[0] == 1) // Check for completion flag
+        {
+            Debug.Log("Document transfer complete.");
+            documentData = documentBuffer.ToArray();
+            hasNewDocument = true;
+            documentBuffer.Clear();
+        }
+        else
+        {
+            Debug.Log($"Received document data of size {data.Length} bytes");
+            documentBuffer.AddRange(data);
+        }
     }
 
     private void HandlePointCloudMessage(byte[] data)
     {
-        Debug.Log($"Received point cloud data of size {data.Length} bytes");
-        DeserializePointCloud(data, out receivedVertices, out receivedColors);
-        hasNewPointCloud = true;
+        if (data.Length == 1 && data[0] == 1) // Check for completion flag
+        {
+            Debug.Log("Point Cloud transfer complete.");
+            DeserializePointCloud(pointCloudBuffer.ToArray(), out receivedVertices, out receivedColors);
+            hasNewPointCloud = true;
+            pointCloudBuffer.Clear();
+        }
+        else
+        {
+            Debug.Log($"Received point cloud data of size {data.Length} bytes");
+            pointCloudBuffer.AddRange(data);
+        }
     }
 
     private void DeserializePointCloud(byte[] data, out Vector3[] vertices, out Color[] colors)
@@ -224,10 +245,20 @@ public class WebRTCManager : NetworkBehaviour
     }
 
     public bool HasNewDocument() => hasNewDocument;
-    public byte[] GetReceivedDocument() { hasNewDocument = false; return documentData; }
+
+    public byte[] GetReceivedDocument()
+    {
+        hasNewDocument = false;
+        return documentData;
+    }
 
     public bool HasNewPointCloud() => hasNewPointCloud;
-    public (Vector3[], Color[]) GetReceivedPointCloud() { hasNewPointCloud = false; return (receivedVertices, receivedColors); }
+
+    public (Vector3[], Color[]) GetReceivedPointCloud()
+    {
+        hasNewPointCloud = false;
+        return (receivedVertices, receivedColors);
+    }
 
     private void OnDestroy()
     {

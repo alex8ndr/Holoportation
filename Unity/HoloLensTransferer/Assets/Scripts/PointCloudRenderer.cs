@@ -1,13 +1,11 @@
 ﻿using Fusion;
-using GK;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
 public class PointCloudRenderer : MonoBehaviour
 {
-    public int maxChunkSize = 65535; // If you want to whole point cloud
-    //public int maxChunkSize = 1361; // If you only want a small portion of the points
+    public int maxChunkSize = 65535;
     public float pointSize = 0.005f;
     public GameObject pointCloudElem;
     public Material pointCloudMaterial;
@@ -15,6 +13,9 @@ public class PointCloudRenderer : MonoBehaviour
     public int maxNumElems = 1;
 
     public WebRTCManager webRTCManager;
+
+    List<Vector3> newPoints = new List<Vector3>();
+    List<Color> newColors = new List<Color>();
 
     void Start()
     {
@@ -76,18 +77,16 @@ public class PointCloudRenderer : MonoBehaviour
             }
 
             // Thin the point cloud
-            //List<Vector3> newPoints = new List<Vector3>();
-            //List<Color> newColors = new List<Color>();
+            newPoints.Clear();
+            newColors.Clear();
 
-            //float voxelSize = 0.02f;
+            float voxelSize = 0.01f;
 
-            //VoxelDownsample(points.ToList(), colors.ToList(), ref newPoints, ref newColors, voxelSize);
-            //Debug.Log("Original points: " + points.Length + ", new points: " + newPoints.Count);
+            VoxelNoiseReduction(points, colors, ref newPoints, ref newColors, voxelSize);
+            Debug.Log("Original points: " + points.Length + ", new points: " + newPoints.Count);
 
-            //ElemRenderer renderer = webRTCManager.networkObjects[i].GetComponent<ElemRenderer>();
-            //renderer.TriggerMeshUpdate(points.Length, colors.Length, points, colors);
-
-            webRTCManager.SendPointCloud(points, colors);
+            webRTCManager.SendPointCloud(newPoints.ToArray(), newColors.ToArray());
+            //webRTCManager.SendPointCloud(points, colors);
 
             offset += nPointsToRender;
         }
@@ -97,33 +96,74 @@ public class PointCloudRenderer : MonoBehaviour
     {
         for (int i = 0; i < nElems; i++)
         {
-            //GameObject newElem = GameObject.Instantiate(pointCloudElem);
-            //newElem.transform.parent = transform;
-            //newElem.transform.localPosition = new Vector3(0.0f, 0.0f, 0.0f);
-            //newElem.transform.localRotation = Quaternion.identity;
-            //newElem.transform.localScale = new Vector3(1.0f, 1.0f, 1.0f);
-
-            //elems.Add(newElem);
-
             webRTCManager.SpawnNetworkObject(pointCloudElem, new Vector3(0.0f, 0.0f, 0.0f), Quaternion.identity);
         }
     }
 
     void RemoveElems(int nElems)
     {
-        //for (int i = 0; i < nElems; i++)
-        //{
-        //    Destroy(elems[0]);
-        //    elems.Remove(elems[0]);
-        //}
-
         webRTCManager.DestroyNetworkObjects(nElems);
     }
 
-    public void VoxelDownsample(List<Vector3> originalPoints, List<Color> originalColors, ref List<Vector3> newPoints, ref List<Color> newColors, float voxelSize)
+    public void VoxelNoiseReduction(
+        Vector3[] originalPoints,
+        Color[] originalColors,
+        ref List<Vector3> newPoints,
+        ref List<Color> newColors,
+        float voxelSize,
+        int minPointsThreshold = 2
+    )
+    {
+        var voxelCounts = new Dictionary<Vector3Int, int>();
+
+        // Pass 1: Count points per voxel
+        for (int i = 0; i < originalPoints.Length; i++)
+        {
+            Vector3 point = originalPoints[i];
+            Vector3Int voxelKey = new Vector3Int(
+                Mathf.FloorToInt(point.x / voxelSize),
+                Mathf.FloorToInt(point.y / voxelSize),
+                Mathf.FloorToInt(point.z / voxelSize)
+            );
+
+            if (voxelCounts.ContainsKey(voxelKey))
+                voxelCounts[voxelKey]++;
+            else
+                voxelCounts[voxelKey] = 1;
+        }
+
+        // Pass 2: Only add points from valid voxels
+        for (int i = 0; i < originalPoints.Length; i++)
+        {
+            Vector3 point = originalPoints[i];
+            Vector3Int voxelKey = new Vector3Int(
+                Mathf.FloorToInt(point.x / voxelSize),
+                Mathf.FloorToInt(point.y / voxelSize),
+                Mathf.FloorToInt(point.z / voxelSize)
+            );
+
+            if (voxelCounts.TryGetValue(voxelKey, out int count) && count >= minPointsThreshold)
+            {
+                newPoints.Add(point);
+                newColors.Add(originalColors[i]);
+            }
+        }
+    }
+
+    public void VoxelDownsampleSurfaceAware(
+        List<Vector3> originalPoints,
+        List<Color> originalColors,
+        ref List<Vector3> newPoints,
+        ref List<Color> newColors,
+        float voxelSize,
+        int minPointsThreshold = 4,  // Minimum points to consider a surface
+        float curvatureThreshold = 0.005f,  // Threshold for planar regions, defines how flat a region must be to be retained
+        float densityFactor = 1.5f  // Controls how many points are kept in dense areas
+    )
     {
         Dictionary<Vector3Int, List<(Vector3, Color)>> voxelMap = new Dictionary<Vector3Int, List<(Vector3, Color)>>();
 
+        // Step 1: Assign points to voxels
         for (int i = 0; i < originalPoints.Count; i++)
         {
             Vector3 point = originalPoints[i];
@@ -141,24 +181,66 @@ public class PointCloudRenderer : MonoBehaviour
             voxelMap[voxelKey].Add((point, color));
         }
 
-        // Compute the average position and color for each voxel
+        // Step 2: Process each voxel for surface structure
         foreach (var voxel in voxelMap)
         {
-            Vector3 avgPosition = Vector3.zero;
-            Color avgColor = Color.black;
-            int count = voxel.Value.Count;
+            List<(Vector3, Color)> pointsInVoxel = voxel.Value;
+            int count = pointsInVoxel.Count;
 
-            foreach (var (pos, col) in voxel.Value)
+            if (count < minPointsThreshold)
+                continue;  // Ignore small clusters
+
+            // Compute covariance matrix for PCA
+            Vector3 centroid = Vector3.zero;
+            foreach (var (pos, _) in pointsInVoxel)
+                centroid += pos;
+            centroid /= count;
+
+            // Compute covariance matrix
+            float[,] covariance = new float[3, 3];
+            foreach (var (pos, _) in pointsInVoxel)
             {
-                avgPosition += pos;
-                avgColor += col; // Convert Color to Vector4 for addition
+                Vector3 diff = pos - centroid;
+                covariance[0, 0] += diff.x * diff.x;
+                covariance[0, 1] += diff.x * diff.y;
+                covariance[0, 2] += diff.x * diff.z;
+                covariance[1, 0] += diff.y * diff.x;
+                covariance[1, 1] += diff.y * diff.y;
+                covariance[1, 2] += diff.y * diff.z;
+                covariance[2, 0] += diff.z * diff.x;
+                covariance[2, 1] += diff.z * diff.y;
+                covariance[2, 2] += diff.z * diff.z;
             }
 
-            avgPosition /= count;
-            avgColor /= count; // Averaging the color
+            // Compute eigenvalues of covariance matrix
+            float[] eigenvalues = ComputeEigenvalues(covariance);
+            eigenvalues = eigenvalues.OrderBy(e => e).ToArray(); // Sort ascending
 
-            newPoints.Add(avgPosition);
-            newColors.Add(avgColor);
+            float smallestEigenvalue = eigenvalues[0]; // Smallest eigenvalue indicates flatness
+
+            if (smallestEigenvalue > curvatureThreshold)
+                continue;  // Skip non-flat regions
+
+            // Retain more points in dense areas
+            int pointsToKeep = Mathf.CeilToInt(Mathf.Sqrt(count) * densityFactor);
+            pointsToKeep = Mathf.Min(pointsToKeep, count);
+
+            // Pick best representative points (closest to centroid)
+            pointsInVoxel.Sort((a, b) =>
+                Vector3.Distance(a.Item1, centroid).CompareTo(Vector3.Distance(b.Item1, centroid))
+            );
+
+            for (int i = 0; i < pointsToKeep; i++)
+            {
+                newPoints.Add(pointsInVoxel[i].Item1);
+                newColors.Add(pointsInVoxel[i].Item2);
+            }
         }
+    }
+
+    private float[] ComputeEigenvalues(float[,] matrix)
+    {
+        // Placeholder: Replace with actual eigenvalue computation using linear algebra
+        return new float[] { 0.001f, 0.01f, 0.1f };  // Mock values for now
     }
 }

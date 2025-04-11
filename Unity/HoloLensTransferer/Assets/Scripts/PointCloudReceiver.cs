@@ -8,6 +8,7 @@ using UnityEngine;
 public class PointCloudReceiver : MonoBehaviour
 {
     TcpClient socket;
+    public string IPAddress = "127.0.0.1";
     public int port = 48002;
 
     PointCloudRenderer pointCloudRenderer;
@@ -21,6 +22,8 @@ public class PointCloudReceiver : MonoBehaviour
     void Start()
     {
         pointCloudRenderer = GetComponent<PointCloudRenderer>();
+
+        Connect(IPAddress);
     }
 
     void Update()

@@ -4,7 +4,9 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
+using Unity.VisualScripting;
 using UnityEngine;
 
 public class WebRTCManager : NetworkBehaviour
@@ -27,6 +29,7 @@ public class WebRTCManager : NetworkBehaviour
     private bool isFusionInitialized = false;
 
     private const float POSITION_SCALE = 1000f;
+    private const int MAX_CHUNK_SIZE = 250000; // Maximum chunk size in bytes
 
     private PlayerRef currentPlayer;
     public List<NetworkObject> networkObjects = new List<NetworkObject>();
@@ -197,30 +200,77 @@ public class WebRTCManager : NetworkBehaviour
         peerConnection.AddIceCandidate(candidate);
     }
 
-    // Sending Document Data
+    // Sending Document Data in Chunks
     public void SendDocument(byte[] documentData)
     {
         if (documentChannel != null && documentChannel.State == DataChannel.ChannelState.Open)
         {
             Debug.Log($"Sending document of size {documentData.Length} bytes...");
-            documentChannel.SendMessage(documentData);
-            this.documentData = documentData;
+
+            // Split the document data into chunks
+            var chunks = SplitDataIntoChunks(documentData);
+            for (int i = 0; i < chunks.Length; i++)
+            {
+                documentChannel.SendMessage(chunks[i]);
+            }
+
+            // Send a completion flag after sending all chunks
+            SendCompletionFlag(documentChannel, "document");
+
             hasNewDocument = true;
+            this.documentData = documentData;
         }
     }
 
-    // Sending Point Cloud Data
+    // Sending Point Cloud Data in Chunks
     public void SendPointCloud(Vector3[] vertices, Color[] colors)
     {
         if (pointCloudChannel != null && pointCloudChannel.State == DataChannel.ChannelState.Open)
         {
             byte[] data = SerializePointCloud(vertices, colors);
             Debug.Log($"Sending point cloud with {vertices.Length} points. (Data size: {data.Length} bytes)");
-            pointCloudChannel.SendMessage(data);
+
+            // Split the point cloud data into chunks
+            var chunks = SplitDataIntoChunks(data);
+            for (int i = 0; i < chunks.Length; i++)
+            {
+                pointCloudChannel.SendMessage(chunks[i]);
+            }
+
+            // Send a completion flag after sending all chunks
+            SendCompletionFlag(pointCloudChannel, "pointCloud");
+
+            hasNewPointCloud = true;
             receivedVertices = vertices;
             receivedColors = colors;
-            hasNewPointCloud = true;
         }
+    }
+
+    // Helper function to split data into chunks
+    private byte[][] SplitDataIntoChunks(byte[] data)
+    {
+        int chunkCount = Mathf.CeilToInt((float)data.Length / MAX_CHUNK_SIZE);
+        byte[][] chunks = new byte[chunkCount][];
+
+        for (int i = 0; i < chunkCount; i++)
+        {
+            int offset = i * MAX_CHUNK_SIZE;
+            int chunkSize = Mathf.Min(MAX_CHUNK_SIZE, data.Length - offset);
+            byte[] chunk = new byte[chunkSize];
+            Array.Copy(data, offset, chunk, 0, chunkSize);
+            chunks[i] = chunk;
+        }
+
+        return chunks;
+    }
+
+    // Send a completion flag after all chunks are sent
+    private void SendCompletionFlag(DataChannel channel, string dataType)
+    {
+        byte[] completionMessage = new byte[] { 1 }; // Flag indicating completion (1 for done)
+        channel.SendMessage(completionMessage);
+
+        Debug.Log($"{dataType} transfer complete.");
     }
 
     private byte[] SerializePointCloud(Vector3[] vertices, Color[] colors)
@@ -251,16 +301,28 @@ public class WebRTCManager : NetworkBehaviour
     // Handling Received Data (For Debugging and Validation)
     private void HandleDocumentMessage(byte[] data)
     {
-        Debug.Log($"Received document data of size {data.Length} bytes");
-        documentData = data;
-        hasNewDocument = true;
+        if (data.Length == 1 && data[0] == 1) // Check for completion flag
+        {
+            Debug.Log("Document transfer complete.");
+            hasNewDocument = true;
+        }
+        else
+        {
+            Debug.Log($"Received document data of size {data.Length} bytes");
+        }
     }
 
     private void HandlePointCloudMessage(byte[] data)
     {
-        Debug.Log($"Received point cloud data of size {data.Length} bytes");
-        DeserializePointCloud(data, out receivedVertices, out receivedColors);
-        hasNewPointCloud = true;
+        if (data.Length == 1 && data[0] == 1) // Check for completion flag
+        {
+            Debug.Log("Point Cloud transfer complete.");
+            hasNewPointCloud = true;
+        }
+        else
+        {
+            Debug.Log($"Received point cloud data of size {data.Length} bytes");
+        }
     }
 
     private void DeserializePointCloud(byte[] data, out Vector3[] vertices, out Color[] colors)
@@ -268,7 +330,7 @@ public class WebRTCManager : NetworkBehaviour
         using (MemoryStream stream = new MemoryStream(data))
         using (BinaryReader reader = new BinaryReader(stream))
         {
-            int length = reader.ReadInt32();
+            int length = data.Length;
             vertices = new Vector3[length];
             colors = new Color[length];
 
@@ -291,10 +353,20 @@ public class WebRTCManager : NetworkBehaviour
     }
 
     public bool HasNewDocument() => hasNewDocument;
-    public byte[] GetReceivedDocument() { hasNewDocument = false; return documentData; }
+
+    public byte[] GetReceivedDocument()
+    {
+        hasNewDocument = false;
+        return documentData;
+    }
 
     public bool HasNewPointCloud() => hasNewPointCloud;
-    public (Vector3[], Color[]) GetReceivedPointCloud() { hasNewPointCloud = false; return (receivedVertices, receivedColors); }
+
+    public (Vector3[], Color[]) GetReceivedPointCloud()
+    {
+        hasNewPointCloud = false;
+        return (receivedVertices, receivedColors);
+    }
 
     private void OnDestroy()
     {

@@ -20,7 +20,7 @@ public class DocumentPictureReceiver : NetworkBehaviour
     private Thread listenerThread;
     private bool isRunning = false;
     private float lastImageTime = 0f;
-    private const float IMAGE_TIMEOUT = 10f;
+    private const float IMAGE_TIMEOUT = 30f;
 
     private byte[] receivedImageData;
     [Networked] private int receivedImageWidth { get; set; }
@@ -71,6 +71,9 @@ public class DocumentPictureReceiver : NetworkBehaviour
             listenerThread.IsBackground = true;
             listenerThread.Start();
         }
+
+        receivedImageWidth = 1000;
+        receivedImageHeight = 1000;
     }
 
     void ListenForImages()
@@ -127,9 +130,6 @@ public class DocumentPictureReceiver : NetworkBehaviour
                 {
                     SendImageData(receivedImageData);
                     receivedImageData = null;
-                    // Update networked properties for width and height (ensuring they are synchronized **after** data transmission)
-                    receivedImageWidth = newWidth;
-                    receivedImageHeight = newHeight;
                 }
             }
         }
@@ -137,6 +137,8 @@ public class DocumentPictureReceiver : NetworkBehaviour
         // Check that the image was received here and fully sent through WebRTC
         if (isProcessingImage && webRTCManager.HasNewDocument())
         {
+            receivedImageWidth = newWidth;
+            receivedImageHeight = newHeight;
             ApplyTexture();
             isProcessingImage = false;
         }
