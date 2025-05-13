@@ -1,11 +1,11 @@
 using Fusion;
+using Fusion.Sockets;
 using Microsoft.MixedReality.WebRTC;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
-using Unity.VisualScripting;
 using UnityEngine;
 
 public class WebRTCManager : NetworkBehaviour
@@ -16,6 +16,7 @@ public class WebRTCManager : NetworkBehaviour
 
     // Room management
     private NetworkRunner networkRunner;
+    private PlayerRef senderPlayer;
     public bool isSender = false; // Set to false for the receiver
     private List<byte> documentBuffer = new List<byte>();
     private byte[] documentData;
@@ -26,10 +27,29 @@ public class WebRTCManager : NetworkBehaviour
     private Color[] receivedColors;
     private bool hasNewPointCloud = false;
 
-    private bool isWebRTCInitialized = false;
     private bool isFusionInitialized = false;
+    private readonly List<IceCandidate> pendingIceCandidates = new();
+    private bool remoteSdpSet = false;
+    private string pendingSdpType;
+    private string pendingSdpContent;
+    private bool peerConnectionInitialized = false;
 
     private const float POSITION_SCALE = 1000f;
+
+    private enum SignalType : byte
+    {
+        Sdp,
+        Ice
+    }
+
+    private struct SignalMessage
+    {
+        public SignalType Type;
+        public string Payload;
+        public string SdpMid;
+        public int SdpMlineIndex;
+        public int SenderPlayerId;
+    }
 
     void OnEnable()
     {
@@ -39,8 +59,11 @@ public class WebRTCManager : NetworkBehaviour
     public void PlayerJoined(NetworkRunner networkRunner, PlayerRef player)
     {
         this.networkRunner = networkRunner;
-        isFusionInitialized = true;
-        Debug.Log("PlayerJoined called. Fusion is now initialized.");
+        if (!isFusionInitialized)
+        {
+            isFusionInitialized = true;
+            Debug.Log("PlayerJoined called. Fusion is now initialized.");
+        }
     }
 
     private IEnumerator WaitForFusionConnection()
@@ -49,139 +72,159 @@ public class WebRTCManager : NetworkBehaviour
         {
             yield return null;
         }
-
-        InitializeWebRTC();
     }
 
-    private async void InitializeWebRTC()
+    public void OnReliableDataReceived(NetworkRunner runner, PlayerRef sender, ReliableKey key, ArraySegment<byte> data)
     {
-        Debug.Log("Initializing WebRTC...");
+        Debug.Log($"Received reliable data. LocalPlayer: {runner.LocalPlayer}, Sender: {sender}");
 
-        var config = new PeerConnectionConfiguration
+        //networkRunner = runner;
+        var json = System.Text.Encoding.UTF8.GetString(data.Array, data.Offset, data.Count);
+        var message = JsonUtility.FromJson<SignalMessage>(json);
+
+        switch (message.Type)
+        {
+            case SignalType.Sdp:
+                Debug.Log("Received SDP via reliable data.");
+                senderPlayer = PlayerRef.FromIndex(message.SenderPlayerId);
+                HandleReceivedSdp(message.Payload);
+                break;
+
+            case SignalType.Ice:
+                Debug.Log("Received ICE via reliable data.");
+                HandleReceivedIceCandidate(message.Payload, message.SdpMid, message.SdpMlineIndex);
+                break;
+        }
+    }
+
+    private void HandleReceivedSdp(string message)
+    {
+        string[] parts = message.Split(new[] { "::" }, 2, StringSplitOptions.None);
+        if (parts.Length != 2)
+        {
+            Debug.LogError("Invalid SDP message format.");
+            return;
+        }
+
+        pendingSdpType = parts[0];
+        pendingSdpContent = parts[1];
+
+        _ = SetupPeerConnection(); // This will apply SDP once ready
+    }
+
+    private async Task SetupPeerConnection()
+    {
+        var peer = new PeerConnection();
+
+        peer.IceGatheringStateChanged += state => Debug.Log($"ICE {senderPlayer.PlayerId}: {state}");
+        peer.LocalSdpReadytoSend += msg => SendSdpMessage(msg);
+        peer.IceCandidateReadytoSend += cand => SendIceCandidate(cand);
+        peer.DataChannelAdded += channel => OnDataChannelAdded(channel);
+
+        await peer.InitializeAsync(new PeerConnectionConfiguration
         {
             IceServers = new List<IceServer>
+        {
+            new IceServer { Urls = { "stun:stun.l.google.com:19302" } },
+            new IceServer
             {
-                new IceServer { Urls = { "stun:stun.l.google.com:19302" } }
+                Urls = { "turn:turn.anyfirewall.com:443?transport=tcp" },
+                TurnUserName = "webrtc",
+                TurnPassword = "webrtc"
             }
+        }
+        });
+
+        peerConnection = peer;
+        peerConnectionInitialized = true;
+
+        var sdpMsg = new SdpMessage
+        {
+            Type = pendingSdpType == "offer" ? SdpMessageType.Offer : SdpMessageType.Answer,
+            Content = pendingSdpContent
         };
 
-        peerConnection = new PeerConnection();
+        await peerConnection.SetRemoteDescriptionAsync(sdpMsg);
+        remoteSdpSet = true;
+        Debug.Log("Remote SDP set successfully.");
 
-        // Initialize WebRTC with the provided config
-        await peerConnection.InitializeAsync(config);
+        if (pendingSdpType == "offer" && !isSender)
+        {
+            Debug.Log("Creating answer...");
+            peerConnection.CreateAnswer();
+        }
 
-        // Register event handlers
-        peerConnection.LocalSdpReadytoSend += OnLocalSdpReadyToSend;
-        peerConnection.IceCandidateReadytoSend += OnIceCandidateReadyToSend;
-        peerConnection.DataChannelAdded += OnDataChannelAdded;
+        foreach (var candidate in pendingIceCandidates)
+        {
+            peerConnection.AddIceCandidate(candidate);
+        }
+        pendingIceCandidates.Clear();
+    }
 
-        isWebRTCInitialized = true;
-        Debug.Log("WebRTC initialized successfully.");
+    private void HandleReceivedIceCandidate(string content, string sdpMid, int sdpMlineIndex)
+    {
+        var candidate = new IceCandidate
+        {
+            Content = content,
+            SdpMid = sdpMid,
+            SdpMlineIndex = sdpMlineIndex
+        };
+
+        if (!peerConnectionInitialized || !remoteSdpSet)
+        {
+            Debug.Log("Queuing ICE candidate...");
+            pendingIceCandidates.Add(candidate);
+            return;
+        }
+
+        peerConnection.AddIceCandidate(candidate);
+    }
+
+    private void SendSdpMessage(SdpMessage message)
+    {
+        var msg = new SignalMessage
+        {
+            Type = SignalType.Sdp,
+            Payload = $"{(message.Type == SdpMessageType.Offer ? "offer" : "answer")}::{message.Content}",
+            SenderPlayerId = networkRunner.LocalPlayer.PlayerId
+        };
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(JsonUtility.ToJson(msg));
+        Debug.Log("Sending an SDP message to sender player " + senderPlayer.PlayerId);
+        networkRunner.SendReliableDataToPlayer(senderPlayer, ReliableKey.FromInts(0), bytes);
+    }
+
+    private void SendIceCandidate(IceCandidate candidate)
+    {
+        var message = new SignalMessage
+        {
+            Type = SignalType.Ice,
+            Payload = candidate.Content,
+            SdpMid = candidate.SdpMid,
+            SdpMlineIndex = candidate.SdpMlineIndex
+        };
+
+        string json = JsonUtility.ToJson(message);
+        byte[] bytes = System.Text.Encoding.UTF8.GetBytes(json);
+        networkRunner.SendReliableDataToPlayer(senderPlayer, ReliableKey.FromInts(1), bytes);
     }
 
     private void OnDataChannelAdded(DataChannel channel)
     {
         Debug.Log($"Data channel added: {channel.Label}");
 
-        if (channel.Label == "documentTransfer")
+        if (channel.Label.StartsWith("doc_"))
         {
             documentChannel = channel;
-            documentChannel.StateChanged += OnDocumentChannelStateChanged;
+            documentChannel.StateChanged += () => Debug.Log($"Document channel state changed: {documentChannel.State}");
             documentChannel.MessageReceived += HandleDocumentMessage;
         }
-        else if (channel.Label == "pointCloudTransfer")
+        else if (channel.Label.StartsWith("pc_"))
         {
             pointCloudChannel = channel;
-            pointCloudChannel.StateChanged += OnPointCloudChannelStateChanged;
+            pointCloudChannel.StateChanged += () => Debug.Log($"Point cloud channel state changed: {pointCloudChannel.State}");
             pointCloudChannel.MessageReceived += HandlePointCloudMessage;
         }
-    }
-
-    private void OnDocumentChannelStateChanged()
-    {
-        Debug.Log($"Document DataChannel state changed: {documentChannel.State}");
-    }
-
-    private void OnPointCloudChannelStateChanged()
-    {
-        Debug.Log($"Point Cloud DataChannel state changed: {pointCloudChannel.State}");
-    }
-
-    public void OnReceivedSdpOffer(string offerSdp)
-    {
-        if (!isWebRTCInitialized || !isFusionInitialized)
-        {
-            Debug.LogError("WebRTC or Fusion not initialized. Cannot process offer.");
-            return;
-        }
-
-        Debug.Log("Received SDP offer. Setting remote description...");
-
-        var offer = new SdpMessage
-        {
-            Type = SdpMessageType.Offer,
-            Content = offerSdp
-        };
-
-        peerConnection.SetRemoteDescriptionAsync(offer).ContinueWith(task =>
-        {
-            if (task.IsCompletedSuccessfully)
-            {
-                Debug.Log("Remote description set. Creating answer...");
-                peerConnection.CreateAnswer();
-            }
-            else
-            {
-                Debug.LogError("Failed to set remote description: " + task.Exception);
-            }
-        });
-    }
-
-    private void OnLocalSdpReadyToSend(SdpMessage message)
-    {
-        Debug.Log("Sending SDP message: " + message.Type);
-        RpcSendSdpMessage(message.Type == SdpMessageType.Offer ? "offer" : "answer", message.Content);
-    }
-
-    private void OnIceCandidateReadyToSend(IceCandidate candidate)
-    {
-        Debug.Log("Sending ICE Candidate...");
-        RpcSendIceCandidate(candidate.Content, candidate.SdpMid, candidate.SdpMlineIndex);
-    }
-
-    [Rpc(RpcSources.All, RpcTargets.All)]
-    public void RpcSendSdpMessage(string type, string sdp)
-    {
-        Debug.Log($"Received SDP {type} RPC.");
-
-        if (type == "offer" && !isSender)
-        {
-            OnReceivedSdpOffer(sdp);
-        }
-        else if (type == "answer" && isSender)
-        {
-            var answer = new SdpMessage
-            {
-                Type = SdpMessageType.Answer,
-                Content = sdp
-            };
-            peerConnection.SetRemoteDescriptionAsync(answer);
-        }
-    }
-
-    [Rpc(RpcSources.All, RpcTargets.All)]
-    public void RpcSendIceCandidate(string candidateContent, string sdpMid, int sdpMlineIndex)
-    {
-        Debug.Log("Received ICE Candidate RPC.");
-
-        IceCandidate candidate = new IceCandidate
-        {
-            Content = candidateContent,
-            SdpMid = sdpMid,
-            SdpMlineIndex = sdpMlineIndex
-        };
-
-        peerConnection.AddIceCandidate(candidate);
     }
 
     // Handling Received Data (For Debugging and Validation)

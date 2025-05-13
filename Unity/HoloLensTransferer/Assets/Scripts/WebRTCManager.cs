@@ -1,20 +1,15 @@
 using Fusion;
+using Fusion.Sockets;
 using Microsoft.MixedReality.WebRTC;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
-using Unity.VisualScripting;
 using UnityEngine;
 
 public class WebRTCManager : NetworkBehaviour
 {
-    private PeerConnection peerConnection;
-    private DataChannel documentChannel;
-    private DataChannel pointCloudChannel;
-
     private NetworkRunner networkRunner;
     public bool isSender = true; // This is the sender
 
@@ -25,31 +20,37 @@ public class WebRTCManager : NetworkBehaviour
     private Color[] receivedColors;
     private bool hasNewPointCloud = false;
 
-    private bool isWebRTCInitialized = false;
     private bool isFusionInitialized = false;
 
     private const float POSITION_SCALE = 1000f;
-    private const int MAX_CHUNK_SIZE = 250000; // Maximum chunk size in bytes
+    private const int MAX_CHUNK_SIZE = 150000; // Maximum chunk size in bytes
 
     private PlayerRef currentPlayer;
+    private List<PlayerRef> otherPlayers = new();
     public List<NetworkObject> networkObjects = new List<NetworkObject>();
 
-    void OnEnable()
+    private struct PlayerChannels
     {
-        StartCoroutine(WaitForFusionConnection());
+        public DataChannel DocumentChannel;
+        public DataChannel PointCloudChannel;
     }
 
-    public void PlayerJoined(NetworkRunner networkRunner, PlayerRef player)
-    {
-        // Once a player joins, we can initialize Fusion and WebRTC
-        if (!isFusionInitialized)
-        {
-            isFusionInitialized = true;
-            currentPlayer = player;
-        }
+    private Dictionary<PlayerRef, PeerConnection> peerConnections = new();
+    private Dictionary<PlayerRef, PlayerChannels> playerChannels = new();
 
-        this.networkRunner = networkRunner;
-        Debug.Log("PlayerJoined called. Fusion is now initialized.");
+    private enum SignalType : byte
+    {
+        Sdp,
+        Ice
+    }
+
+    private struct SignalMessage
+    {
+        public SignalType Type;
+        public string Payload;
+        public string SdpMid;
+        public int SdpMlineIndex;
+        public int SenderPlayerId;
     }
 
     public void SpawnNetworkObject(GameObject prefab, Vector3 position, Quaternion rotation)
@@ -71,179 +72,253 @@ public class WebRTCManager : NetworkBehaviour
         }
     }
 
+    void OnEnable()
+    {
+        StartCoroutine(WaitForFusionConnection());
+    }
+
     private IEnumerator WaitForFusionConnection()
     {
         while (!isFusionInitialized)
         {
             yield return null;
         }
-
-        InitializeWebRTC();
     }
 
-    private async void InitializeWebRTC()
+    public void PlayerJoined(NetworkRunner networkRunner, PlayerRef player)
     {
-        Debug.Log("Initializing WebRTC for sender...");
+        this.networkRunner = networkRunner;
 
-        var config = new PeerConnectionConfiguration
+        if (!isFusionInitialized && player.PlayerId == networkRunner.LocalPlayer.PlayerId)
+        {
+            isFusionInitialized = true;
+            currentPlayer = player;
+            Debug.Log("Fusion initialized for current player.");
+        }
+        else
+        {
+            otherPlayers.Add(player);
+            _ = SetupPeerConnectionForPlayer(player); // async void
+        }
+    }
+
+    public void PlayerLeft(NetworkRunner networkRunner, PlayerRef player)
+    {
+        this.networkRunner = networkRunner;
+
+        if (peerConnections.TryGetValue(player, out var connection))
+        {
+            connection.Close();
+            connection.Dispose();
+        }
+
+        peerConnections.Remove(player);
+        playerChannels.Remove(player);
+        otherPlayers.Remove(player);
+    }
+
+    private async Task SetupPeerConnectionForPlayer(PlayerRef player)
+    {
+        Debug.Log("Setting up a peer connection for player " + player.PlayerId);
+
+        var peer = new PeerConnection();
+
+        peer.IceGatheringStateChanged += state => Debug.Log($"ICE {player.PlayerId}: {state}");
+        peer.LocalSdpReadytoSend += msg => SendSdpMessage(player, msg);
+        peer.IceCandidateReadytoSend += cand => SendIceCandidate(player, cand);
+        peer.DataChannelAdded += channel => Debug.Log($"Channel added: {channel.Label}");
+
+        await peer.InitializeAsync(new PeerConnectionConfiguration
         {
             IceServers = new List<IceServer>
             {
-                new IceServer { Urls = { "stun:stun.l.google.com:19302" } }
+                new IceServer { Urls = { "stun:stun.l.google.com:19302" } },
+                new IceServer
+                {
+                    Urls = { "turn:turn.anyfirewall.com:443?transport=tcp" },
+                    TurnUserName = "webrtc",
+                    TurnPassword = "webrtc"
+                }
             }
+        });
+
+        var docChannel = await peer.AddDataChannelAsync($"doc_{player.PlayerId}", true, true);
+        var pcChannel = await peer.AddDataChannelAsync($"pc_{player.PlayerId}", true, true);
+
+        docChannel.StateChanged += () => Debug.Log($"Document channel state for {player.PlayerId}: {docChannel.State}");
+        docChannel.MessageReceived += HandleDocumentMessage;
+
+        pcChannel.StateChanged += () => Debug.Log($"Point cloud channel state for {player.PlayerId}: {pcChannel.State}");
+        pcChannel.MessageReceived += HandlePointCloudMessage;
+
+        playerChannels[player] = new PlayerChannels
+        {
+            DocumentChannel = docChannel,
+            PointCloudChannel = pcChannel
         };
 
-        peerConnection = new PeerConnection();
+        peerConnections[player] = peer;
 
-        // Initialize WebRTC with the provided config
-        await peerConnection.InitializeAsync(config);
+        peer.CreateOffer();
 
-        // Register event handlers
-        peerConnection.LocalSdpReadytoSend += OnLocalSdpReadyToSend;
-        peerConnection.IceCandidateReadytoSend += OnIceCandidateReadyToSend;
-        peerConnection.DataChannelAdded += OnDataChannelAdded;
-
-        // Create Data Channels (Explicitly on the Sender Side)
-        documentChannel = await peerConnection.AddDataChannelAsync("documentTransfer", ordered: true, reliable: true);
-        pointCloudChannel = await peerConnection.AddDataChannelAsync("pointCloudTransfer", ordered: true, reliable: true);
-
-        // Register Event Handlers for the Data Channels
-        documentChannel.StateChanged += OnDocumentChannelStateChanged;
-        documentChannel.MessageReceived += HandleDocumentMessage;
-
-        pointCloudChannel.StateChanged += OnPointCloudChannelStateChanged;
-        pointCloudChannel.MessageReceived += HandlePointCloudMessage;
-
-        isWebRTCInitialized = true;
-        Debug.Log("WebRTC initialized successfully. Creating SDP offer...");
-
-        // Start the offer process
-        peerConnection.CreateOffer();
+        Debug.Log("Peer connection for player " + player.PlayerId + " initialized");
     }
 
-    private void OnDataChannelAdded(DataChannel channel)
+    public void OnReliableDataReceived(NetworkRunner runner, PlayerRef sender, ReliableKey key, ArraySegment<byte> data)
     {
-        Debug.Log($"Data channel added: {channel.Label}");
+        Debug.Log($"Received reliable data. LocalPlayer: {runner.LocalPlayer}, Sender: {sender}");
+
+        //networkRunner = runner;
+        var json = System.Text.Encoding.UTF8.GetString(data.Array, data.Offset, data.Count);
+        var msg = JsonUtility.FromJson<SignalMessage>(json);
+
+        switch (msg.Type)
+        {
+            case SignalType.Sdp:
+                Debug.Log("Received SDP via reliable data.");
+                HandleReceivedSdp(PlayerRef.FromIndex(msg.SenderPlayerId), msg.Payload);
+                break;
+            case SignalType.Ice:
+                Debug.Log("Received ICE via reliable data.");
+                HandleReceivedIceCandidate(PlayerRef.FromIndex(msg.SenderPlayerId), msg.Payload, msg.SdpMid, msg.SdpMlineIndex);
+                break;
+        }
     }
 
-    private void OnDocumentChannelStateChanged()
+    private async void HandleReceivedSdp(PlayerRef player, string payload)
     {
-        Debug.Log($"Document DataChannel state changed: {documentChannel.State}");
-    }
+        var parts = payload.Split(new[] { "::" }, 2, StringSplitOptions.None);
+        var type = parts[0];
+        var sdp = parts[1];
 
-    private void OnPointCloudChannelStateChanged()
-    {
-        Debug.Log($"Point Cloud DataChannel state changed: {pointCloudChannel.State}");
-    }
+        if (!peerConnections.TryGetValue(player, out var peer))
+        {
+            Debug.LogError($"No PeerConnection found for {player}");
+            return;
+        }
 
-    private void OnLocalSdpReadyToSend(SdpMessage message)
-    {
-        Debug.Log("Sending SDP message: " + message.Type);
-        RpcSendSdpMessage(message.Type == SdpMessageType.Offer ? "offer" : "answer", message.Content);
-    }
+        var msg = new SdpMessage
+        {
+            Type = type == "offer" ? SdpMessageType.Offer : SdpMessageType.Answer,
+            Content = sdp
+        };
 
-    private void OnIceCandidateReadyToSend(IceCandidate candidate)
-    {
-        Debug.Log("Sending ICE Candidate...");
-        RpcSendIceCandidate(candidate.Content, candidate.SdpMid, candidate.SdpMlineIndex);
-    }
-
-    [Rpc(RpcSources.All, RpcTargets.All)]
-    public void RpcSendSdpMessage(string type, string sdp)
-    {
-        Debug.Log($"Received SDP {type} RPC.");
+        await peer.SetRemoteDescriptionAsync(msg);
 
         if (type == "offer" && !isSender)
         {
-            var offer = new SdpMessage
-            {
-                Type = SdpMessageType.Offer,
-                Content = sdp
-            };
-
-            peerConnection.SetRemoteDescriptionAsync(offer).ContinueWith(task =>
-            {
-                if (task.IsCompletedSuccessfully)
-                {
-                    Debug.Log("Remote description set. Creating answer...");
-                    peerConnection.CreateAnswer();
-                }
-                else
-                {
-                    Debug.LogError("Failed to set remote description: " + task.Exception);
-                }
-            });
-        }
-        else if (type == "answer" && isSender)
-        {
-            var answer = new SdpMessage
-            {
-                Type = SdpMessageType.Answer,
-                Content = sdp
-            };
-            peerConnection.SetRemoteDescriptionAsync(answer);
+            peer.CreateAnswer();
         }
     }
 
-    [Rpc(RpcSources.All, RpcTargets.All)]
-    public void RpcSendIceCandidate(string candidateContent, string sdpMid, int sdpMlineIndex)
+    private void HandleReceivedIceCandidate(PlayerRef player, string content, string sdpMid, int sdpMlineIndex)
     {
-        Debug.Log("Received ICE Candidate RPC.");
-
-        IceCandidate candidate = new IceCandidate
+        if (!peerConnections.TryGetValue(player, out var peer))
         {
-            Content = candidateContent,
+            Debug.LogWarning($"ICE candidate received for unknown player {player.PlayerId}. Deferring...");
+            return;
+        }
+
+        var candidate = new IceCandidate
+        {
+            Content = content,
             SdpMid = sdpMid,
             SdpMlineIndex = sdpMlineIndex
         };
 
-        peerConnection.AddIceCandidate(candidate);
+        peer.AddIceCandidate(candidate);
+        Debug.Log($"ICE candidate applied to player {player.PlayerId}");
+    }
+
+    private void SendSdpMessage(PlayerRef player, SdpMessage message)
+    {
+        var msg = new SignalMessage
+        {
+            Type = SignalType.Sdp,
+            Payload = $"{(message.Type == SdpMessageType.Offer ? "offer" : "answer")}::{message.Content}",
+            SenderPlayerId = networkRunner.LocalPlayer.PlayerId
+        };
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(JsonUtility.ToJson(msg));
+        networkRunner.SendReliableDataToPlayer(player, ReliableKey.FromInts(0), bytes);
+    }
+
+    private void SendIceCandidate(PlayerRef player, IceCandidate candidate)
+    {
+        var msg = new SignalMessage
+        {
+            Type = SignalType.Ice,
+            Payload = candidate.Content,
+            SdpMid = candidate.SdpMid,
+            SdpMlineIndex = candidate.SdpMlineIndex
+        };
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(JsonUtility.ToJson(msg));
+        networkRunner.SendReliableDataToPlayer(player, ReliableKey.FromInts(0), bytes);
+    }
+
+    public void SendDocument(byte[] documentData)
+    {
+        foreach (var player in otherPlayers)
+        {
+            SendDocumentTo(player, documentData);
+        }
     }
 
     // Sending Document Data in Chunks
-    public void SendDocument(byte[] documentData)
+    public void SendDocumentTo(PlayerRef player, byte[] documentData)
     {
-        if (documentChannel != null && documentChannel.State == DataChannel.ChannelState.Open)
+        if (!playerChannels.TryGetValue(player, out var channels) || channels.DocumentChannel.State != DataChannel.ChannelState.Open)
         {
-            Debug.Log($"Sending document of size {documentData.Length} bytes...");
+            Debug.LogWarning($"No open document channel for player {player.PlayerId}");
+            return;
+        }
 
-            // Split the document data into chunks
-            var chunks = SplitDataIntoChunks(documentData);
-            for (int i = 0; i < chunks.Length; i++)
-            {
-                documentChannel.SendMessage(chunks[i]);
-            }
+        var chunks = SplitDataIntoChunks(documentData);
+        foreach (var chunk in chunks)
+        {
+            channels.DocumentChannel.SendMessage(chunk);
+        }
 
-            // Send a completion flag after sending all chunks
-            SendCompletionFlag(documentChannel, "document");
+        SendCompletionFlag(channels.DocumentChannel, "document");
 
-            hasNewDocument = true;
-            this.documentData = documentData;
+        hasNewDocument = true;
+        this.documentData = documentData;
+    }
+
+    public void SendPointCloud(Vector3[] vertices, Color[] colors)
+    {
+        foreach (var player in otherPlayers)
+        {
+            SendPointCloudTo(player, vertices, colors);
         }
     }
 
     // Sending Point Cloud Data in Chunks
-    public void SendPointCloud(Vector3[] vertices, Color[] colors)
+    public void SendPointCloudTo(PlayerRef player, Vector3[] vertices, Color[] colors)
     {
-        if (pointCloudChannel != null && pointCloudChannel.State == DataChannel.ChannelState.Open)
+        if (!playerChannels.TryGetValue(player, out var channels) || channels.PointCloudChannel.State != DataChannel.ChannelState.Open)
         {
-            byte[] data = SerializePointCloud(vertices, colors);
-            Debug.Log($"Sending point cloud with {vertices.Length} points. (Data size: {data.Length} bytes)");
-
-            // Split the point cloud data into chunks
-            var chunks = SplitDataIntoChunks(data);
-            for (int i = 0; i < chunks.Length; i++)
-            {
-                pointCloudChannel.SendMessage(chunks[i]);
-            }
-
-            // Send a completion flag after sending all chunks
-            SendCompletionFlag(pointCloudChannel, "pointCloud");
-
-            hasNewPointCloud = true;
-            receivedVertices = vertices;
-            receivedColors = colors;
+            Debug.LogWarning($"No open point cloud channel for player {player.PlayerId}");
+            return;
         }
+        
+        byte[] data = SerializePointCloud(vertices, colors);
+        Debug.Log($"Sending point cloud with {vertices.Length} points. (Data size: {data.Length} bytes)");
+
+        // Split the point cloud data into chunks
+        var chunks = SplitDataIntoChunks(data);
+        foreach (var chunk in chunks)
+        {
+            channels.PointCloudChannel.SendMessage(chunk);
+        }
+
+        // Send a completion flag after sending all chunks
+        SendCompletionFlag(channels.PointCloudChannel, "pointCloud");
+
+        hasNewPointCloud = true;
+        receivedVertices = vertices;
+        receivedColors = colors;
     }
 
     // Helper function to split data into chunks
@@ -325,33 +400,6 @@ public class WebRTCManager : NetworkBehaviour
         }
     }
 
-    private void DeserializePointCloud(byte[] data, out Vector3[] vertices, out Color[] colors)
-    {
-        using (MemoryStream stream = new MemoryStream(data))
-        using (BinaryReader reader = new BinaryReader(stream))
-        {
-            int length = data.Length;
-            vertices = new Vector3[length];
-            colors = new Color[length];
-
-            for (int i = 0; i < length; i++)
-            {
-                float x = reader.ReadInt16() / POSITION_SCALE;
-                float y = reader.ReadInt16() / POSITION_SCALE;
-                float z = reader.ReadInt16() / POSITION_SCALE;
-                vertices[i] = new Vector3(x, y, z);
-            }
-
-            for (int i = 0; i < length; i++)
-            {
-                float r = reader.ReadByte() / 255f;
-                float g = reader.ReadByte() / 255f;
-                float b = reader.ReadByte() / 255f;
-                colors[i] = new Color(r, g, b, 1f);
-            }
-        }
-    }
-
     public bool HasNewDocument() => hasNewDocument;
 
     public byte[] GetReceivedDocument()
@@ -370,7 +418,10 @@ public class WebRTCManager : NetworkBehaviour
 
     private void OnDestroy()
     {
-        peerConnection?.Close();
-        peerConnection?.Dispose();
+        foreach (var (playerRef, peerConnection) in peerConnections)
+        {
+            peerConnection?.Close();
+            peerConnection?.Dispose();
+        }
     }
 }
