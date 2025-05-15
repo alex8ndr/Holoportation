@@ -13,8 +13,10 @@ public class PointCloudReceiver : MonoBehaviour
 
     PointCloudRenderer pointCloudRenderer;
     bool bReadyForNextFrame = true;
-    bool bIsRenderingFrame = false;
     bool bConnected = false;
+
+    private float sendDelay = 0.03f;
+    private float timeSinceLastSend = 0.0f;
 
     // Queue to hold received frames until they can be processed on the main thread
     ConcurrentQueue<(float[] vertices, byte[] colors)> frameQueue = new ConcurrentQueue<(float[], byte[])>();
@@ -28,6 +30,8 @@ public class PointCloudReceiver : MonoBehaviour
 
     void Update()
     {
+        timeSinceLastSend += Time.deltaTime;
+
         if (!bConnected)
             return;
 
@@ -38,19 +42,12 @@ public class PointCloudReceiver : MonoBehaviour
         }
 
         // Check if there is frame data in the queue, and render it on the main thread
-        if (frameQueue.TryDequeue(out var frameData))
+        if (timeSinceLastSend >= sendDelay && frameQueue.TryDequeue(out var frameData))
         {
             pointCloudRenderer.Render(frameData.vertices, frameData.colors);
             bReadyForNextFrame = true;
+            timeSinceLastSend = 0.0f;
         }
-    }
-
-    private IEnumerator RenderFrameAsync(float[] vertices, byte[] colors)
-    {
-        bIsRenderingFrame = true;  // Mark that we're rendering a frame
-        pointCloudRenderer.Render(vertices, colors);  // Render the frame
-        yield return new WaitForFixedUpdate();
-        bIsRenderingFrame = false;  // Mark rendering complete
     }
 
     public async void Connect(string IP)
