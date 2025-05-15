@@ -38,7 +38,7 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 0}
-  m_IndirectSpecularColor: {r: 0.43667555, g: 0.48427176, b: 0.5645241, a: 1}
+  m_IndirectSpecularColor: {r: 0.4366757, g: 0.48427194, b: 0.5645252, a: 1}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -258,6 +258,7 @@ MonoBehaviour:
   NestedObjects: []
   NetworkedBehaviours:
   - {fileID: 305562880}
+  ForceRemoteRenderTimeframe: 0
 --- !u!1 &683017650
 GameObject:
   m_ObjectHideFlags: 0
@@ -380,7 +381,19 @@ MonoBehaviour:
       m_Calls: []
   OnReliableData:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 305562880}
+        m_TargetAssemblyTypeName: WebRTCManager, Assembly-CSharp
+        m_MethodName: OnReliableDataReceived
+        m_Mode: 0
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 1
   OnReliableProgress:
     m_PersistentCalls:
       m_Calls: []
@@ -553,7 +566,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 83d9acc7968244a8886f3af591305bcb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  activeProfile: {fileID: 11400000, guid: f1c412f27f158f948a319f3d823095d3, type: 2}
+  activeProfile: {fileID: 11400000, guid: 8a00c75ae62fc3244a5e9e20e87bdce6, type: 2}
 --- !u!4 &1484110145
 Transform:
   m_ObjectHideFlags: 0

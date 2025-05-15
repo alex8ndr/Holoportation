@@ -111,10 +111,7 @@ public class DocumentPictureReceiver : NetworkBehaviour
                 }
             }
         }
-        catch (Exception e)
-        {
-            Debug.LogError("TCP Listener Error: " + e.Message);
-        }
+        catch { }
     }
 
     void Update()

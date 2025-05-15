@@ -1,10 +1,13 @@
+using Assets.Scripts.Utils;
 using Fusion;
 using Fusion.Sockets;
 using Microsoft.MixedReality.WebRTC;
 using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using UnityEngine;
 
@@ -23,20 +26,15 @@ public class WebRTCManager : NetworkBehaviour
     private bool isFusionInitialized = false;
 
     private const float POSITION_SCALE = 1000f;
-    private const int MAX_CHUNK_SIZE = 150000; // Maximum chunk size in bytes
+    private const int MAX_CHUNK_SIZE = 250000; // Maximum chunk size in bytes
+    private const int MAX_DATA_QUEUE_SIZE = 5;
 
     private PlayerRef currentPlayer;
     private List<PlayerRef> otherPlayers = new();
     public List<NetworkObject> networkObjects = new List<NetworkObject>();
 
-    private struct PlayerChannels
-    {
-        public DataChannel DocumentChannel;
-        public DataChannel PointCloudChannel;
-    }
-
     private Dictionary<PlayerRef, PeerConnection> peerConnections = new();
-    private Dictionary<PlayerRef, PlayerChannels> playerChannels = new();
+    private ConcurrentDictionary<PlayerRef, PlayerChannels> allPlayerChannels = new();
 
     private enum SignalType : byte
     {
@@ -51,6 +49,35 @@ public class WebRTCManager : NetworkBehaviour
         public string SdpMid;
         public int SdpMlineIndex;
         public int SenderPlayerId;
+    }
+
+    void OnEnable()
+    {
+        StartCoroutine(WaitForFusionConnection());
+    }
+
+    private void Update()
+    {
+        if (isFusionInitialized)
+        {
+            SendQueuedDataForAllChannels();
+        }
+    }
+
+    private void SendQueuedDataForAllChannels()
+    {
+        foreach (var playerChannels in allPlayerChannels.Values)
+        {
+            if (playerChannels.DocumentChannel.CanSend && playerChannels.DocumentChannel.DataQueue.TryDequeue(out var documentData))
+            {
+                SendInChunksOnChannel(playerChannels.DocumentChannel.Channel, documentData);
+            }
+
+            if (playerChannels.PointCloudChannel.CanSend && playerChannels.PointCloudChannel.DataQueue.TryDequeue(out var frameData))
+            {
+                SendInChunksOnChannel(playerChannels.PointCloudChannel.Channel, frameData);
+            }
+        }
     }
 
     public void SpawnNetworkObject(GameObject prefab, Vector3 position, Quaternion rotation)
@@ -71,12 +98,6 @@ public class WebRTCManager : NetworkBehaviour
             networkObjects.Remove(networkObjects[0]);
         }
     }
-
-    void OnEnable()
-    {
-        StartCoroutine(WaitForFusionConnection());
-    }
-
     private IEnumerator WaitForFusionConnection()
     {
         while (!isFusionInitialized)
@@ -113,7 +134,7 @@ public class WebRTCManager : NetworkBehaviour
         }
 
         peerConnections.Remove(player);
-        playerChannels.Remove(player);
+        allPlayerChannels.Remove(player, out var removed);
         otherPlayers.Remove(player);
     }
 
@@ -147,14 +168,27 @@ public class WebRTCManager : NetworkBehaviour
 
         docChannel.StateChanged += () => Debug.Log($"Document channel state for {player.PlayerId}: {docChannel.State}");
         docChannel.MessageReceived += HandleDocumentMessage;
+        docChannel.BufferingChanged += (ulong previous, ulong current, ulong limit) => BufferingChanged(docChannel, previous, current, limit);
 
         pcChannel.StateChanged += () => Debug.Log($"Point cloud channel state for {player.PlayerId}: {pcChannel.State}");
         pcChannel.MessageReceived += HandlePointCloudMessage;
+        pcChannel.BufferingChanged += (ulong previous, ulong current, ulong limit) => BufferingChanged(pcChannel, previous, current, limit);
 
-        playerChannels[player] = new PlayerChannels
+        allPlayerChannels[player] = new PlayerChannels
         {
-            DocumentChannel = docChannel,
-            PointCloudChannel = pcChannel
+            DocumentChannel = new PlayerDataChannel
+            {
+                Channel = docChannel,
+                CanSend = true,
+                DataQueue = new()
+            },
+
+            PointCloudChannel = new PlayerDataChannel
+            {
+                Channel = pcChannel,
+                CanSend = true,
+                DataQueue = new()
+            },
         };
 
         peerConnections[player] = peer;
@@ -168,7 +202,7 @@ public class WebRTCManager : NetworkBehaviour
     {
         Debug.Log($"Received reliable data. LocalPlayer: {runner.LocalPlayer}, Sender: {sender}");
 
-        //networkRunner = runner;
+        networkRunner = runner;
         var json = System.Text.Encoding.UTF8.GetString(data.Array, data.Offset, data.Count);
         var msg = JsonUtility.FromJson<SignalMessage>(json);
 
@@ -268,19 +302,17 @@ public class WebRTCManager : NetworkBehaviour
     // Sending Document Data in Chunks
     public void SendDocumentTo(PlayerRef player, byte[] documentData)
     {
-        if (!playerChannels.TryGetValue(player, out var channels) || channels.DocumentChannel.State != DataChannel.ChannelState.Open)
+        if (!allPlayerChannels.TryGetValue(player, out var channels) || channels.DocumentChannel.Channel.State != DataChannel.ChannelState.Open)
         {
             Debug.LogWarning($"No open document channel for player {player.PlayerId}");
             return;
         }
 
-        var chunks = SplitDataIntoChunks(documentData);
-        foreach (var chunk in chunks)
+        // Enqueue the data for later sending
+        if (channels.DocumentChannel.DataQueue.Count < MAX_DATA_QUEUE_SIZE)
         {
-            channels.DocumentChannel.SendMessage(chunk);
+            channels.DocumentChannel.DataQueue.Enqueue(documentData);
         }
-
-        SendCompletionFlag(channels.DocumentChannel, "document");
 
         hasNewDocument = true;
         this.documentData = documentData;
@@ -297,28 +329,35 @@ public class WebRTCManager : NetworkBehaviour
     // Sending Point Cloud Data in Chunks
     public void SendPointCloudTo(PlayerRef player, Vector3[] vertices, Color[] colors)
     {
-        if (!playerChannels.TryGetValue(player, out var channels) || channels.PointCloudChannel.State != DataChannel.ChannelState.Open)
+        if (!allPlayerChannels.TryGetValue(player, out var channels) || channels.PointCloudChannel.Channel.State != DataChannel.ChannelState.Open)
         {
             Debug.LogWarning($"No open point cloud channel for player {player.PlayerId}");
             return;
         }
         
+        // Serialize into a byte array
         byte[] data = SerializePointCloud(vertices, colors);
-        Debug.Log($"Sending point cloud with {vertices.Length} points. (Data size: {data.Length} bytes)");
 
-        // Split the point cloud data into chunks
-        var chunks = SplitDataIntoChunks(data);
-        foreach (var chunk in chunks)
+        // Enqueue the data for later sending
+        if (channels.PointCloudChannel.DataQueue.Count < MAX_DATA_QUEUE_SIZE)
         {
-            channels.PointCloudChannel.SendMessage(chunk);
+            channels.PointCloudChannel.DataQueue.Enqueue(data);
         }
-
-        // Send a completion flag after sending all chunks
-        SendCompletionFlag(channels.PointCloudChannel, "pointCloud");
 
         hasNewPointCloud = true;
         receivedVertices = vertices;
         receivedColors = colors;
+    }
+
+    private void SendInChunksOnChannel(DataChannel channel, byte[] data)
+    {
+        var chunks = SplitDataIntoChunks(data);
+        foreach (var chunk in chunks)
+        {
+            channel.SendMessage(chunk);
+        }
+
+        SendCompletionFlag(channel);
     }
 
     // Helper function to split data into chunks
@@ -340,12 +379,10 @@ public class WebRTCManager : NetworkBehaviour
     }
 
     // Send a completion flag after all chunks are sent
-    private void SendCompletionFlag(DataChannel channel, string dataType)
+    private void SendCompletionFlag(DataChannel channel)
     {
         byte[] completionMessage = new byte[] { 1 }; // Flag indicating completion (1 for done)
         channel.SendMessage(completionMessage);
-
-        Debug.Log($"{dataType} transfer complete.");
     }
 
     private byte[] SerializePointCloud(Vector3[] vertices, Color[] colors)
@@ -370,6 +407,60 @@ public class WebRTCManager : NetworkBehaviour
             }
 
             return stream.ToArray();
+        }
+    }
+
+    private void BufferingChanged(DataChannel datachannel, ulong previous, ulong current, ulong limit)
+    {
+        if (current + 2 * MAX_CHUNK_SIZE >= limit)
+        {
+            var keys = allPlayerChannels.Keys.ToList();
+
+            foreach (var player in keys)
+            {
+                var playerChannels = allPlayerChannels[player];
+
+                if (playerChannels.DocumentChannel.Channel.Label.Equals(datachannel.Label))
+                {
+                    playerChannels.DocumentChannel.CanSend = false;
+                    return;
+                }
+
+                if (playerChannels.PointCloudChannel.Channel.Label.Equals(datachannel.Label))
+                {
+                    playerChannels.PointCloudChannel.CanSend = false;
+                    return;
+                }
+            }
+        }
+        else
+        {
+            var keys = allPlayerChannels.Keys.ToList();
+
+            foreach (var player in keys)
+            {
+                var playerChannels = allPlayerChannels[player];
+
+                if (playerChannels.DocumentChannel.Channel.Label.Equals(datachannel.Label))
+                {
+                    var docChannel = playerChannels.DocumentChannel;
+                    if (!docChannel.CanSend) // Only update if needed
+                    {
+                        docChannel.CanSend = true;;
+                    }
+                    return;
+                }
+
+                if (playerChannels.PointCloudChannel.Channel.Label.Equals(datachannel.Label))
+                {
+                    var pcChannel = playerChannels.PointCloudChannel;
+                    if (!pcChannel.CanSend) // Only update if needed
+                    {
+                        pcChannel.CanSend = true;;
+                    }
+                    return;
+                }
+            }
         }
     }
 
@@ -420,8 +511,12 @@ public class WebRTCManager : NetworkBehaviour
     {
         foreach (var (playerRef, peerConnection) in peerConnections)
         {
-            peerConnection?.Close();
-            peerConnection?.Dispose();
+            try
+            {
+                peerConnection?.Close();
+                peerConnection?.Dispose();
+            }
+            catch { }
         }
     }
 }
