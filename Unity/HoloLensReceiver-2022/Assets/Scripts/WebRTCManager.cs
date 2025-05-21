@@ -76,9 +76,7 @@ public class WebRTCManager : NetworkBehaviour
 
     public void OnReliableDataReceived(NetworkRunner runner, PlayerRef sender, ReliableKey key, ArraySegment<byte> data)
     {
-        Debug.Log($"Received reliable data. LocalPlayer: {runner.LocalPlayer}, Sender: {sender}");
-
-        //networkRunner = runner;
+        networkRunner = runner;
         var json = System.Text.Encoding.UTF8.GetString(data.Array, data.Offset, data.Count);
         var message = JsonUtility.FromJson<SignalMessage>(json);
 
@@ -124,15 +122,14 @@ public class WebRTCManager : NetworkBehaviour
         await peer.InitializeAsync(new PeerConnectionConfiguration
         {
             IceServers = new List<IceServer>
-        {
-            new IceServer { Urls = { "stun:stun.l.google.com:19302" } },
-            new IceServer
             {
-                Urls = { "turn:turn.anyfirewall.com:443?transport=tcp" },
-                TurnUserName = "webrtc",
-                TurnPassword = "webrtc"
+                new IceServer
+                {
+                    Urls = { "turn:168.138.76.12:5056" },
+                    TurnUserName = "holoportationuser",
+                    TurnPassword = "hlR4g7&52phqwe568142+"
+                }
             }
-        }
         });
 
         peerConnection = peer;
@@ -201,7 +198,8 @@ public class WebRTCManager : NetworkBehaviour
             Type = SignalType.Ice,
             Payload = candidate.Content,
             SdpMid = candidate.SdpMid,
-            SdpMlineIndex = candidate.SdpMlineIndex
+            SdpMlineIndex = candidate.SdpMlineIndex,
+            SenderPlayerId = networkRunner.LocalPlayer.PlayerId
         };
 
         string json = JsonUtility.ToJson(message);
