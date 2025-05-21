@@ -147,18 +147,18 @@ public class WebRTCManager : NetworkBehaviour
         peer.IceGatheringStateChanged += state => Debug.Log($"ICE {player.PlayerId}: {state}");
         peer.LocalSdpReadytoSend += msg => SendSdpMessage(player, msg);
         peer.IceCandidateReadytoSend += cand => SendIceCandidate(player, cand);
+
         peer.DataChannelAdded += channel => Debug.Log($"Channel added: {channel.Label}");
 
         await peer.InitializeAsync(new PeerConnectionConfiguration
         {
             IceServers = new List<IceServer>
             {
-                new IceServer { Urls = { "stun:stun.l.google.com:19302" } },
                 new IceServer
                 {
-                    Urls = { "turn:turn.anyfirewall.com:443?transport=tcp" },
-                    TurnUserName = "webrtc",
-                    TurnPassword = "webrtc"
+                    Urls = { "turn:168.138.76.12:5056" },
+                    TurnUserName = "holoportationuser",
+                    TurnPassword = "hlR4g7&52phqwe568142+"
                 }
             }
         });
@@ -200,8 +200,6 @@ public class WebRTCManager : NetworkBehaviour
 
     public void OnReliableDataReceived(NetworkRunner runner, PlayerRef sender, ReliableKey key, ArraySegment<byte> data)
     {
-        Debug.Log($"Received reliable data. LocalPlayer: {runner.LocalPlayer}, Sender: {sender}");
-
         networkRunner = runner;
         var json = System.Text.Encoding.UTF8.GetString(data.Array, data.Offset, data.Count);
         var msg = JsonUtility.FromJson<SignalMessage>(json);
