@@ -28,6 +28,8 @@ public class WebRTCManager : NetworkBehaviour
     private const float POSITION_SCALE = 1000f;
     private const int MAX_CHUNK_SIZE = 250000; // Maximum chunk size in bytes
     private const int MAX_DATA_QUEUE_SIZE = 5;
+    
+    private int maxReceivedPointcloudSize = 0;
 
     private PlayerRef currentPlayer;
     private List<PlayerRef> otherPlayers = new();
@@ -336,6 +338,11 @@ public class WebRTCManager : NetworkBehaviour
         // Serialize into a byte array
         byte[] data = SerializePointCloud(vertices, colors);
 
+        if (data.Length > maxReceivedPointcloudSize)
+        {
+            maxReceivedPointcloudSize = data.Length;
+        }
+
         // Enqueue the data for later sending
         if (channels.PointCloudChannel.DataQueue.Count < MAX_DATA_QUEUE_SIZE)
         {
@@ -410,7 +417,8 @@ public class WebRTCManager : NetworkBehaviour
 
     private void BufferingChanged(DataChannel datachannel, ulong previous, ulong current, ulong limit)
     {
-        if (current + 2 * MAX_CHUNK_SIZE >= limit)
+        // Check if there is enough room in the buffer to send the largest point cloud received in this session
+        if (current + (ulong)maxReceivedPointcloudSize >= limit)
         {
             var keys = allPlayerChannels.Keys.ToList();
 
