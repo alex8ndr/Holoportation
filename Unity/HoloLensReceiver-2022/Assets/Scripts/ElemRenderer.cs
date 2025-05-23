@@ -1,6 +1,4 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using System.IO;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 public class ElemRenderer : MonoBehaviour
@@ -9,13 +7,20 @@ public class ElemRenderer : MonoBehaviour
     public Material pointCloudMaterial;
     public float pointSize = 0.005f;
 
-    private bool isUpdating = false;
-
-    private Queue<(Vector3[] points, Color[] colors)> pointCloudQueue = new Queue<(Vector3[], Color[])>();
+    private Queue<(Vector3[] points, Color[] colors)> pointCloudQueue = new();
     private const int maxQueueSize = 5;
 
-    private Mesh mesh;
+    private Matrix4x4[] matrices;
+    private Vector4[] colorData;
+    private int previousColorCapacity = 0;
 
+    private MaterialPropertyBlock propertyBlock;
+    private RenderParams renderParams;
+
+    private Mesh quadMesh;
+    private bool needsRender = false;
+
+    private int pointCount = 0;
     private bool counterStarted = false;
     private float timeSinceLastRender = 0.0f;
     private float totalTime = 0.0f;
@@ -25,96 +30,128 @@ public class ElemRenderer : MonoBehaviour
     void Start()
     {
         webRTCManager = FindObjectOfType<WebRTCManager>();
-
         if (webRTCManager == null)
         {
             Debug.LogError("WebRTCManager not found!");
             return;
         }
 
-        GetComponent<MeshRenderer>().material = pointCloudMaterial;
+        CreateQuadMesh();
 
-        pointCloudMaterial.SetFloat("_PointSize", pointSize * transform.localScale.x);
+        propertyBlock = new MaterialPropertyBlock();
+
+        renderParams = new RenderParams(pointCloudMaterial)
+        {
+            matProps = propertyBlock,
+            worldBounds = new Bounds(Vector3.zero, Vector3.one * 1000f)
+        };
     }
 
     void Update()
     {
         if (counterStarted)
-        {
             timeSinceLastRender += Time.deltaTime;
-        }
 
-        // Enqueue new frame
         if (webRTCManager.HasNewPointCloud())
         {
-            if (!counterStarted)
-            {
-                counterStarted = true;
-            }
-
+            counterStarted = true;
+            needsRender = true;
             var (points, colors) = webRTCManager.GetReceivedPointCloud();
 
             if (pointCloudQueue.Count >= maxQueueSize)
-                pointCloudQueue.Dequeue(); // Discard oldest
+                pointCloudQueue.Dequeue();
 
             pointCloudQueue.Enqueue((points, colors));
         }
 
-        // Dequeue and process one frame per update
-        if (!isUpdating && pointCloudQueue.Count > 0)
+        if (pointCloudQueue.Count > 0)
         {
-            var (points, colors) = pointCloudQueue.Dequeue();
-            SetPointCloud(points, colors);
+            var (positions, colors) = pointCloudQueue.Dequeue();
+            UpdateInstanceData(positions, colors);
         }
+
+        if (needsRender)
+        {
+            totalTime += timeSinceLastRender;
+            timeSinceLastRender = 0.0f;
+            numFrames++;
+            averageFPS = numFrames / totalTime;
+            Debug.Log("Average FPS: " + averageFPS);
+            needsRender = false;
+        }
+
+        RenderPointCloud();
     }
 
-    public void SetPointCloud(Vector3[] positions, Color[] colors)
+    private void UpdateInstanceData(Vector3[] positions, Color[] colors)
     {
-        if (positions == null || positions.Length == 0)
-            return;
+        pointCount = positions.Length;
+        if (pointCount == 0) return;
 
-        mesh = new Mesh();
-        mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+        pointCount = Mathf.Min(positions.Length, colors.Length);
 
-        List<Vector3> verts = new List<Vector3>();
-        List<Color> cols = new List<Color>();
-        List<Vector2> offsets = new List<Vector2>();
-        List<int> indices = new List<int>();
+        matrices = new Matrix4x4[pointCount];
+        colorData = new Vector4[pointCount];
 
-        Vector2[] baseOffsets = new Vector2[]
+        Vector3 right = Camera.main.transform.right;
+        Vector3 up = Camera.main.transform.up;
+
+        for (int i = 0; i < pointCount; i++)
         {
-            new Vector2(-0.5f, -0.5f),
-            new Vector2( 0.5f, -0.5f),
-            new Vector2(-0.5f,  0.5f),
-            new Vector2( 0.5f, -0.5f),
-            new Vector2( 0.5f,  0.5f),
-            new Vector2(-0.5f,  0.5f)
-        };
-
-        for (int i = 0; i < positions.Length; i++)
-        {
-            Color color = (i < colors.Length) ? colors[i] : Color.white;
-
-            for (int j = 0; j < 6; j++)
-            {
-                verts.Add(positions[i]);
-                offsets.Add(baseOffsets[j]);
-                cols.Add(color);
-                indices.Add(i * 6 + j);
-            }
+            Vector3 pos = positions[i];
+            matrices[i] = Matrix4x4.Translate(pos); // position only — rotation in shader
+            colorData[i] = colors[i];
         }
 
-        mesh.SetVertices(verts);
-        mesh.SetColors(cols);
-        mesh.SetUVs(0, offsets); // Send offset in TEXCOORD0
-        mesh.SetIndices(indices, MeshTopology.Triangles, 0);
-        GetComponent<MeshFilter>().sharedMesh = mesh;
+        // 💡 Only recreate the block if more data is needed
+        if (propertyBlock == null || pointCount > previousColorCapacity)
+        {
+            if (propertyBlock == null)
+                propertyBlock = new MaterialPropertyBlock();
+            else
+                propertyBlock.Clear();
 
-        totalTime += timeSinceLastRender;
-        timeSinceLastRender = 0.0f;
-        numFrames++;
+            previousColorCapacity = pointCount;
+            renderParams.matProps = propertyBlock;
+        }
 
-        averageFPS = numFrames / totalTime;
-        Debug.Log("Average FPS: " + averageFPS);
+        propertyBlock.SetVectorArray("_Colors", colorData);
+    }
+
+    private void RenderPointCloud()
+    {
+        if (pointCount == 0 || quadMesh == null || pointCloudMaterial == null)
+            return;
+
+        Graphics.RenderMeshInstanced(renderParams, quadMesh, 0, matrices, pointCount);
+    }
+
+    private void CreateQuadMesh()
+    {
+        quadMesh = new Mesh();
+        quadMesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt16;
+
+        float s = pointSize; // scale factor
+
+        quadMesh.vertices = new[]
+        {
+            new Vector3(-0.5f * s, -0.5f * s, 0),
+            new Vector3( 0.5f * s, -0.5f * s, 0),
+            new Vector3(-0.5f * s,  0.5f * s, 0),
+            new Vector3( 0.5f * s,  0.5f * s, 0)
+        };
+
+        quadMesh.triangles = new[] { 0, 2, 1, 2, 3, 1 };
+
+        quadMesh.uv = new[]
+        {
+            new Vector2(0, 0),
+            new Vector2(1, 0),
+            new Vector2(0, 1),
+            new Vector2(1, 1)
+        };
+
+        quadMesh.RecalculateNormals();
+        quadMesh.UploadMeshData(true);
     }
 }
