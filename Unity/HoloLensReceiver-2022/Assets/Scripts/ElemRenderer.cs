@@ -13,16 +13,11 @@ public class ElemRenderer : MonoBehaviour
 
     private Mesh mesh;
     private readonly List<Vector3> vertices = new();
-    private readonly List<Color> colors = new();
-    private readonly List<Vector2> offsets = new();
+    private readonly List<Color32> colors = new();
+    private readonly List<Vector2> offsetIndices = new();
     private readonly List<int> indices = new();
 
-    private static readonly Vector2[] baseOffsets = new Vector2[]
-    {
-        new(-0.5f, -0.5f), new(0.5f, -0.5f),
-        new(-0.5f,  0.5f), new(0.5f, -0.5f),
-        new(0.5f,  0.5f), new(-0.5f, 0.5f)
-    };
+    private static readonly float[] baseOffsetIndices = new float[] { 0, 1, 2, 3, 4, 5 };
 
     private float timeSinceLastRender = 0f, totalTime = 0f;
     private int numFrames = 0;
@@ -39,6 +34,7 @@ public class ElemRenderer : MonoBehaviour
         }
 
         mesh = new Mesh { indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+        mesh.MarkDynamic(); // Hint for performance
         GetComponent<MeshFilter>().sharedMesh = mesh;
 
         GetComponent<MeshRenderer>().material = pointCloudMaterial;
@@ -76,33 +72,32 @@ public class ElemRenderer : MonoBehaviour
 
         mesh.Clear();
         vertices.Clear();
-        offsets.Clear();
+        offsetIndices.Clear();
         colors.Clear();
         indices.Clear();
 
         for (int i = 0; i < count; i++)
         {
             Vector3 pos = positions[i];
-            Color col = colorData[i];
+            Color32 col = colorData[i];
 
             for (int j = 0; j < 6; j++)
             {
                 vertices.Add(pos);
-                offsets.Add(baseOffsets[j]);
+                offsetIndices.Add(new Vector2(baseOffsetIndices[j], 0));
                 colors.Add(col);
                 indices.Add(i * 6 + j);
             }
         }
 
         mesh.SetVertices(vertices);
-        mesh.SetUVs(0, offsets);
+        mesh.SetUVs(0, offsetIndices);
         mesh.SetColors(colors);
         mesh.SetIndices(indices, MeshTopology.Triangles, 0);
-        GetComponent<MeshFilter>().sharedMesh = mesh;
 
         totalTime += timeSinceLastRender;
-        timeSinceLastRender = 0f;
+        timeSinceLastRender = 0.0f;
         numFrames++;
-        Debug.Log($"Avg FPS: {(numFrames / totalTime):F2}");
+        Debug.Log("Average FPS: " + numFrames / totalTime);
     }
 }
