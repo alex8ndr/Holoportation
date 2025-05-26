@@ -98,6 +98,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 46a3ddbe80ae319449ce8f2d8dd57869, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  pointCloudMaterial: {fileID: 2100000, guid: 30c9fadcd170de64f8c8e51e643d3b69, type: 2}
+  pointSize: 0.005
 --- !u!114 &7260786953554719222
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -110,12 +112,13 @@ MonoBehaviour:
   m_Script: {fileID: -1552182283, guid: e725a070cec140c4caffb81624c8c787, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  SortKey: 2988980120
+  SortKey: 2843455646
   ObjectInterest: 1
   Flags: 262145
   NestedObjects: []
   NetworkedBehaviours:
   - {fileID: 8595189472562147830}
+  ForceRemoteRenderTimeframe: 0
 --- !u!1 &463884454408270117
 GameObject:
   m_ObjectHideFlags: 0

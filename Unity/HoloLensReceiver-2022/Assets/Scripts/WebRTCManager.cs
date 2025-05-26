@@ -24,7 +24,7 @@ public class WebRTCManager : NetworkBehaviour
 
     List<byte> pointCloudBuffer = new List<byte>();
     private Vector3[] receivedVertices;
-    private Color[] receivedColors;
+    private Color32[] receivedColors;
     private bool hasNewPointCloud = false;
 
     private bool isFusionInitialized = false;
@@ -35,6 +35,9 @@ public class WebRTCManager : NetworkBehaviour
     private bool peerConnectionInitialized = false;
 
     private const float POSITION_SCALE = 1000f;
+    private const int POINT_POSITIONS_DATA_SIZE = sizeof(short) * 3; // 3 shorts for (x, y, z) positions
+    private const int POINT_COLORS_DATA_SIZE = 3; // 3 bytes for (r, g, b) colors
+    private const int POINT_DATA_SIZE = POINT_POSITIONS_DATA_SIZE + POINT_COLORS_DATA_SIZE;
 
     private enum SignalType : byte
     {
@@ -258,30 +261,38 @@ public class WebRTCManager : NetworkBehaviour
         }
     }
 
-    private void DeserializePointCloud(byte[] data, out Vector3[] vertices, out Color[] colors)
+    private void DeserializePointCloud(byte[] data, out Vector3[] vertices, out Color32[] colors)
     {
-        using (MemoryStream stream = new MemoryStream(data))
-        using (BinaryReader reader = new BinaryReader(stream))
+        // Determine number of points from total length
+        int nPoints = data.Length / POINT_DATA_SIZE;
+
+        vertices = new Vector3[nPoints];
+        colors = new Color32[nPoints];
+
+        // Split into positions and colors
+        int positionDataLength = nPoints * POINT_POSITIONS_DATA_SIZE;
+
+        // Convert position data
+        for (int i = 0; i < nPoints; i++)
         {
-            int length = reader.ReadInt32();
-            vertices = new Vector3[length];
-            colors = new Color[length];
+            int offset = i * 3 * sizeof(short);
+            short x = BitConverter.ToInt16(data, offset);
+            short y = BitConverter.ToInt16(data, offset + 2);
+            short z = BitConverter.ToInt16(data, offset + 4);
 
-            for (int i = 0; i < length; i++)
-            {
-                float x = reader.ReadInt16() / POSITION_SCALE;
-                float y = reader.ReadInt16() / POSITION_SCALE;
-                float z = reader.ReadInt16() / POSITION_SCALE;
-                vertices[i] = new Vector3(x, y, z);
-            }
+            vertices[i] = new Vector3(x / POSITION_SCALE, y / POSITION_SCALE, z / POSITION_SCALE);
+        }
 
-            for (int i = 0; i < length; i++)
-            {
-                float r = reader.ReadByte() / 255f;
-                float g = reader.ReadByte() / 255f;
-                float b = reader.ReadByte() / 255f;
-                colors[i] = new Color(r, g, b, 1f);
-            }
+        // Convert color data
+        for (int i = 0; i < nPoints; i++)
+        {
+            int colorOffset = positionDataLength + i * 3;
+
+            byte r = data[colorOffset];
+            byte g = data[colorOffset + 1];
+            byte b = data[colorOffset + 2];
+
+            colors[i] = new Color32(r, g, b, 255);
         }
     }
 
@@ -295,7 +306,7 @@ public class WebRTCManager : NetworkBehaviour
 
     public bool HasNewPointCloud() => hasNewPointCloud;
 
-    public (Vector3[], Color[]) GetReceivedPointCloud()
+    public (Vector3[], Color32[]) GetReceivedPointCloud()
     {
         hasNewPointCloud = false;
         return (receivedVertices, receivedColors);

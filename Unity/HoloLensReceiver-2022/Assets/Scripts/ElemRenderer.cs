@@ -8,7 +8,7 @@ public class ElemRenderer : MonoBehaviour
     public Material pointCloudMaterial;
     public float pointSize = 0.005f;
 
-    private Queue<(Vector3[] points, Color[] colors)> pointCloudQueue = new();
+    private Queue<(Vector3[] points, Color32[] colors)> pointCloudQueue = new();
     private const int maxQueueSize = 5;
 
     private Mesh mesh;
@@ -65,7 +65,7 @@ public class ElemRenderer : MonoBehaviour
         }
     }
 
-    void UpdateMesh(Vector3[] positions, Color[] colorData)
+    void UpdateMesh(Vector3[] positions, Color32[] colorData)
     {
         int count = Mathf.Min(positions.Length, colorData.Length);
         if (count == 0) return;
