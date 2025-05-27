@@ -28,10 +28,11 @@ public class WebRTCManager : NetworkBehaviour
     private bool isFusionInitialized = false;
     private bool isPointCloudPrefabSpawned = false;
 
-    private const float POSITION_SCALE = 1000f;
+    private const float PRECISION = 0.0025f;
+    private const float HALF_RANGE = 256 / 2 * PRECISION; // Half of the number of steps in one byte
     private const int MAX_CHUNK_SIZE = 250000; // Maximum chunk size in bytes
     private const int MAX_DATA_QUEUE_SIZE = 5;
-    private const int POINT_POSITIONS_DATA_SIZE = sizeof(short) * 3; // 3 shorts for (x, y, z) positions
+    private const int POINT_POSITIONS_DATA_SIZE = 3; // 3 bytes for (x, y, z) positions
     private const int POINT_COLORS_DATA_SIZE = 3; // 3 bytes for (r, g, b) colors
     private const int POINT_DATA_SIZE = POINT_POSITIONS_DATA_SIZE + POINT_COLORS_DATA_SIZE;
 
@@ -408,37 +409,42 @@ public class WebRTCManager : NetworkBehaviour
 
     private void DeserializePointCloud(byte[] data, out Vector3[] vertices, out Color32[] colors)
     {
-        // Determine number of points from total length
         int nPoints = data.Length / POINT_DATA_SIZE;
+
+        // Split positions and colors
+        int positionDataLength = nPoints * POINT_POSITIONS_DATA_SIZE;
+        int colorDataStart = positionDataLength;
 
         vertices = new Vector3[nPoints];
         colors = new Color32[nPoints];
 
-        // Split into positions and colors
-        int positionDataLength = nPoints * POINT_POSITIONS_DATA_SIZE;
-
-        // Convert position data
         for (int i = 0; i < nPoints; i++)
         {
-            int offset = i * 3 * sizeof(short);
-            short x = BitConverter.ToInt16(data, offset);
-            short y = BitConverter.ToInt16(data, offset + 2);
-            short z = BitConverter.ToInt16(data, offset + 4);
+            // --- Decode Position ---
+            int posOffset = i * 3;
+            byte bx = data[posOffset + 0];
+            byte by = data[posOffset + 1];
+            byte bz = data[posOffset + 2];
 
-            vertices[i] = new Vector3(x / POSITION_SCALE, y / POSITION_SCALE, z / POSITION_SCALE);
-        }
+            float x = DecodeByteToFloat(bx);
+            float y = DecodeByteToFloat(by);
+            float z = DecodeByteToFloat(bz);
 
-        // Convert color data
-        for (int i = 0; i < nPoints; i++)
-        {
-            int colorOffset = positionDataLength + i * 3;
+            vertices[i] = new Vector3(x, y, z);
 
-            byte r = data[colorOffset];
+            // --- Decode Color ---
+            int colorOffset = colorDataStart + i * 3;
+            byte r = data[colorOffset + 0];
             byte g = data[colorOffset + 1];
             byte b = data[colorOffset + 2];
 
             colors[i] = new Color32(r, g, b, 255);
         }
+    }
+
+    private float DecodeByteToFloat(byte b)
+    {
+        return b * PRECISION - HALF_RANGE;
     }
 
     private void BufferingChanged(DataChannel datachannel, ulong previous, ulong current, ulong limit)
