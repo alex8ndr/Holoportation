@@ -34,13 +34,13 @@ public class WebRTCManager : NetworkBehaviour
     private string pendingSdpContent;
     private bool peerConnectionInitialized = false;
 
-    private const float PRECISION = 0.0025f;
-    private const float HALF_RANGE = 256 / 2 * PRECISION; // Half of the number of steps in one byte
     private const int MAX_CHUNK_SIZE = 250000; // Maximum chunk size in bytes
     private const int MAX_DATA_QUEUE_SIZE = 5;
-    private const int POINT_POSITIONS_DATA_SIZE = 3; // 3 bytes for (x, y, z) positions
-    private const int POINT_COLORS_DATA_SIZE = 3; // 3 bytes for (r, g, b) colors
-    private const int POINT_DATA_SIZE = POINT_POSITIONS_DATA_SIZE + POINT_COLORS_DATA_SIZE;
+
+    // Quantization range per axis (must match the sender)
+    float xMin = -0.32f, xMax = 0.32f;
+    float yMin = -0.32f, yMax = 0.32f;
+    float zMin = 0.00f, zMax = 0.64f;
 
     private enum SignalType : byte
     {
@@ -266,10 +266,10 @@ public class WebRTCManager : NetworkBehaviour
 
     private void DeserializePointCloud(byte[] data, out Vector3[] vertices, out Color32[] colors)
     {
-        int nPoints = data.Length / POINT_DATA_SIZE;
+        int pointSize = 6; // 3 bytes for position, 3 bytes for color
+        int nPoints = data.Length / pointSize;
 
-        // Split positions and colors
-        int positionDataLength = nPoints * POINT_POSITIONS_DATA_SIZE;
+        int positionDataLength = nPoints * 3;
         int colorDataStart = positionDataLength;
 
         vertices = new Vector3[nPoints];
@@ -277,19 +277,17 @@ public class WebRTCManager : NetworkBehaviour
 
         for (int i = 0; i < nPoints; i++)
         {
-            // --- Decode Position ---
             int posOffset = i * 3;
             byte bx = data[posOffset + 0];
             byte by = data[posOffset + 1];
             byte bz = data[posOffset + 2];
 
-            float x = DecodeByteToFloat(bx);
-            float y = DecodeByteToFloat(by);
-            float z = DecodeByteToFloat(bz);
+            float x = DecodeByteToFloat(bx, xMin, xMax);
+            float y = DecodeByteToFloat(by, yMin, yMax);
+            float z = DecodeByteToFloat(bz, zMin, zMax);
 
             vertices[i] = new Vector3(x, y, z);
 
-            // --- Decode Color ---
             int colorOffset = colorDataStart + i * 3;
             byte r = data[colorOffset + 0];
             byte g = data[colorOffset + 1];
@@ -299,14 +297,9 @@ public class WebRTCManager : NetworkBehaviour
         }
     }
 
-    private float DecodeByteToFloat(byte b)
+    private float DecodeByteToFloat(byte b, float min, float max)
     {
-        return b * PRECISION - HALF_RANGE;
-    }
-
-    private float DecodeByteToFloat(byte b, float precision, float halfRange)
-    {
-        return b * precision - halfRange;
+        return (b / 255f) * (max - min) + min;
     }
 
     public bool HasNewDocument() => hasNewDocument;

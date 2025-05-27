@@ -13,6 +13,11 @@ namespace KinectServer
     {
         TcpClient oSocket;
 
+        // Define quantization range per axis (in meters)
+        float xMin = -0.32f, xMax = 0.32f;
+        float yMin = -0.32f, yMax = 0.32f;
+        float zMin = 0.00f, zMax = 0.64f; // Z starts at 0
+
         public TransferSocket(TcpClient clientSocket)
         {
             oSocket = clientSocket;
@@ -49,15 +54,11 @@ namespace KinectServer
 
         public void SendFrame(List<float> vertices, List<byte> colors, float precision = 0.0025f)
         {
-            float halfRange = 128 * precision;
-
             int nPoints = vertices.Count / 3;
 
-            // Will store unique quantized points and corresponding color bytes
             List<byte> uniqueVertices = new List<byte>(nPoints * 3);
             List<byte> uniqueColors = new List<byte>(nPoints * 3);
 
-            // Use HashSet to store packed 3-byte position keys (e.g., x|y|z as int)
             HashSet<int> seen = new HashSet<int>();
 
             for (int i = 0; i < nPoints; i++)
@@ -66,14 +67,13 @@ namespace KinectServer
                 float y = vertices[i * 3 + 1];
                 float z = vertices[i * 3 + 2];
 
-                if (Math.Abs(x) > halfRange || Math.Abs(y) > halfRange || Math.Abs(z) > halfRange)
+                if (x < xMin || x > xMax || y < yMin || y > yMax || z < zMin || z > zMax)
                     continue;
 
-                byte bx = EncodeFloatToByte(x, precision, halfRange);
-                byte by = EncodeFloatToByte(y, precision, halfRange);
-                byte bz = EncodeFloatToByte(z, precision, halfRange);
+                byte bx = EncodeFloatToByte(x, xMin, xMax);
+                byte by = EncodeFloatToByte(y, yMin, yMax);
+                byte bz = EncodeFloatToByte(z, zMin, zMax);
 
-                // Pack x/y/z bytes into a single int key (avoiding collisions)
                 int key = (bx << 16) | (by << 8) | bz;
 
                 if (!seen.Contains(key))
@@ -84,7 +84,6 @@ namespace KinectServer
                     uniqueVertices.Add(by);
                     uniqueVertices.Add(bz);
 
-                    // Add corresponding color
                     uniqueColors.Add(colors[i * 3 + 0]);
                     uniqueColors.Add(colors[i * 3 + 1]);
                     uniqueColors.Add(colors[i * 3 + 2]);
@@ -105,9 +104,11 @@ namespace KinectServer
             }
         }
 
-        private byte EncodeFloatToByte(float value, float precision, float halfRange)
+        private byte EncodeFloatToByte(float value, float min, float max)
         {
-            return (byte)((value + halfRange) / (2f * halfRange) * 255f);
+            float normalized = (value - min) / (max - min);
+            int encoded = (int)(normalized * 255f);
+            return (byte)(encoded < 0 ? 0 : (encoded > 255 ? 255 : encoded));
         }
     }
 }
