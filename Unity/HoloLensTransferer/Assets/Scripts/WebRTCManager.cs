@@ -331,16 +331,16 @@ public class WebRTCManager : NetworkBehaviour
         this.documentData = documentData;
     }
 
-    public void SendPointCloud(byte[] vertices, byte[] colors)
+    public void SendPointCloud(byte[] header, byte[] vertices, byte[] colors)
     {
         foreach (var player in otherPlayers)
         {
-            SendPointCloudTo(player, vertices, colors);
+            SendPointCloudTo(player, header, vertices, colors);
         }
     }
 
     // Sending Point Cloud Data in Chunks
-    public void SendPointCloudTo(PlayerRef player, byte[] vertices, byte[] colors)
+    public void SendPointCloudTo(PlayerRef player, byte[] header, byte[] vertices, byte[] colors)
     {
         if (!allPlayerChannels.TryGetValue(player, out var channels) || channels.PointCloudChannel.Channel.State != DataChannel.ChannelState.Open)
         {
@@ -349,11 +349,11 @@ public class WebRTCManager : NetworkBehaviour
         }
 
         // Concatenate vertices and colors to send them as one transfer
-        byte[] data = new byte[vertices.Length + colors.Length];
+        byte[] data = new byte[header.Length + vertices.Length + colors.Length];
 
-        Buffer.BlockCopy(vertices, 0, data, 0, vertices.Length);
-        Buffer.BlockCopy(colors, 0, data, vertices.Length, colors.Length);
-
+        Buffer.BlockCopy(header, 0, data, 0, header.Length);
+        Buffer.BlockCopy(vertices, 0, data, header.Length, vertices.Length);
+        Buffer.BlockCopy(colors, 0, data, header.Length + vertices.Length, colors.Length);
 
         if (data.Length > maxReceivedPointCloudSize)
         {
@@ -409,21 +409,46 @@ public class WebRTCManager : NetworkBehaviour
 
     private void DeserializePointCloud(byte[] data, out Vector3[] vertices, out Color32[] colors)
     {
-        int pointSize = 6; // 3 bytes for position, 3 bytes for color
-        int nPoints = data.Length / pointSize;
+        // Read header
+        int headerSize = 10;
+        if (data.Length < headerSize)
+        {
+            Debug.LogError("Point cloud data too small to contain header.");
+            vertices = new Vector3[0];
+            colors = new Color32[0];
+            return;
+        }
 
-        int positionDataLength = nPoints * 3;
-        int colorDataStart = positionDataLength;
+        int nPoints = BitConverter.ToInt32(data, 0);
 
+        // Min/max encoded as bytes (centimeter precision in range [0, 1])
+        xMin = DecodeByteToFloat(data[4], 0, 1);
+        xMax = DecodeByteToFloat(data[5], 0, 1);
+        yMin = DecodeByteToFloat(data[6], 0, 1);
+        yMax = DecodeByteToFloat(data[7], 0, 1);
+        zMin = DecodeByteToFloat(data[8], 0, 1);
+        zMax = DecodeByteToFloat(data[9], 0, 1);
+
+        // Allocate arrays
         vertices = new Vector3[nPoints];
         colors = new Color32[nPoints];
 
+        int vertexStart = headerSize;
+        int colorStart = vertexStart + nPoints * 3;
+
+        if (data.Length < colorStart + nPoints * 3)
+        {
+            Debug.LogError("Point cloud data is too short for declared number of points.");
+            return;
+        }
+
+        // Decode vertices and colors
         for (int i = 0; i < nPoints; i++)
         {
-            int posOffset = i * 3;
-            byte bx = data[posOffset + 0];
-            byte by = data[posOffset + 1];
-            byte bz = data[posOffset + 2];
+            int vi = vertexStart + i * 3;
+            byte bx = data[vi + 0];
+            byte by = data[vi + 1];
+            byte bz = data[vi + 2];
 
             float x = DecodeByteToFloat(bx, xMin, xMax);
             float y = DecodeByteToFloat(by, yMin, yMax);
@@ -431,10 +456,10 @@ public class WebRTCManager : NetworkBehaviour
 
             vertices[i] = new Vector3(x, y, z);
 
-            int colorOffset = colorDataStart + i * 3;
-            byte r = data[colorOffset + 0];
-            byte g = data[colorOffset + 1];
-            byte b = data[colorOffset + 2];
+            int ci = colorStart + i * 3;
+            byte r = data[ci + 0];
+            byte g = data[ci + 1];
+            byte b = data[ci + 2];
 
             colors[i] = new Color32(r, g, b, 255);
         }

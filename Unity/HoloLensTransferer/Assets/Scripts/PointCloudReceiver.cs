@@ -38,8 +38,14 @@ public class PointCloudReceiver : MonoBehaviour
                 // Request a new frame
                 await socket.GetStream().WriteAsync(new byte[] { 0 });
 
+                // Read header (10 bytes)
+                byte[] header = new byte[10];
+                int headerRead = 0;
+                while (headerRead < 10)
+                    headerRead += await socket.GetStream().ReadAsync(header, headerRead, 10 - headerRead);
+
                 // Read frame data
-                int nPointsToRead = await ReadIntAsync();
+                int nPointsToRead = BitConverter.ToInt32(header, 0);
                 int nBytesToRead = 3 * nPointsToRead;
 
                 byte[] vertices = new byte[nBytesToRead];
@@ -53,10 +59,8 @@ public class PointCloudReceiver : MonoBehaviour
                 while (bytesRead < nBytesToRead)
                     bytesRead += await socket.GetStream().ReadAsync(colors, bytesRead, Math.Min(nBytesToRead - bytesRead, 64000));
 
-                Debug.Log("Received " + nPointsToRead + " points");
-
                 // Directly pass to WebRTCManager
-                webRTCManager.SendPointCloud(vertices, colors);
+                webRTCManager.SendPointCloud(header, vertices, colors);
             }
             catch (Exception e)
             {
