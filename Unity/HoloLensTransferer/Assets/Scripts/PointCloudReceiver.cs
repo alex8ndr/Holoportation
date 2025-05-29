@@ -10,6 +10,8 @@ public class PointCloudReceiver : MonoBehaviour
     public int port = 48002;
     public WebRTCManager webRTCManager;
 
+    private bool isConnected = false;
+
     void Start()
     {
         Connect(IPAddress);
@@ -21,6 +23,7 @@ public class PointCloudReceiver : MonoBehaviour
         try
         {
             await socket.ConnectAsync(IP, port);
+            isConnected = true;
             StartReceivingLoop();
         }
         catch (Exception e)
@@ -31,36 +34,43 @@ public class PointCloudReceiver : MonoBehaviour
 
     private async void StartReceivingLoop()
     {
-        while (socket.Connected)
+        while (isConnected && socket.Connected)
         {
             try
             {
                 // Request a new frame
                 await socket.GetStream().WriteAsync(new byte[] { 0 });
 
-                // Read header (10 bytes)
-                byte[] header = new byte[10];
-                int headerRead = 0;
-                while (headerRead < 10)
-                    headerRead += await socket.GetStream().ReadAsync(header, headerRead, 10 - headerRead);
-
-                // Read frame data
-                int nPointsToRead = BitConverter.ToInt32(header, 0);
-                int nBytesToRead = 3 * nPointsToRead;
-
-                byte[] vertices = new byte[nBytesToRead];
-                byte[] colors = new byte[nBytesToRead];
-
+                // --- Read scale factor (short) ---
+                byte[] scale = new byte[sizeof(short)];
                 int bytesRead = 0;
-                while (bytesRead < nBytesToRead)
-                    bytesRead += await socket.GetStream().ReadAsync(vertices, bytesRead, Math.Min(nBytesToRead - bytesRead, 64000));
+                while (bytesRead < sizeof(short))
+                    bytesRead += await socket.GetStream().ReadAsync(scale, bytesRead, sizeof(short) - bytesRead);
 
+                // --- Read number of points (4 bytes) ---
+                int nPointsToRead = await ReadIntAsync();
+                int nVerticesBytes = sizeof(short) * 3 * nPointsToRead;
+                int nColorsBytes = 3 * nPointsToRead;
+
+                byte[] vertices = new byte[nVerticesBytes];
+                byte[] colors = new byte[nColorsBytes];
+
+                // Read vertex data
                 bytesRead = 0;
-                while (bytesRead < nBytesToRead)
-                    bytesRead += await socket.GetStream().ReadAsync(colors, bytesRead, Math.Min(nBytesToRead - bytesRead, 64000));
+                while (bytesRead < nVerticesBytes)
+                    bytesRead += await socket.GetStream().ReadAsync(vertices, bytesRead, Math.Min(nVerticesBytes - bytesRead, 64000));
 
-                // Directly pass to WebRTCManager
-                webRTCManager.SendPointCloud(header, vertices, colors);
+                // Read color data
+                bytesRead = 0;
+                while (bytesRead < nColorsBytes)
+                    bytesRead += await socket.GetStream().ReadAsync(colors, bytesRead, Math.Min(nColorsBytes - bytesRead, 64000));
+
+                float floatscale = BitConverter.ToInt16(scale, 0);
+
+                Debug.Log($"Received {nPointsToRead} points with scale " + floatscale);
+
+                // Send to WebRTCManager along with the scale
+                webRTCManager.SendPointCloud(scale, vertices, colors);
             }
             catch (Exception e)
             {
@@ -84,6 +94,7 @@ public class PointCloudReceiver : MonoBehaviour
 
     private void OnDestroy()
     {
-        socket.Close();
+        isConnected = false;
+        socket.Dispose();
     }
 }

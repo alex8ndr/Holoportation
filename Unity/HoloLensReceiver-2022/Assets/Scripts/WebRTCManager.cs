@@ -34,13 +34,10 @@ public class WebRTCManager : NetworkBehaviour
     private string pendingSdpContent;
     private bool peerConnectionInitialized = false;
 
-    private const int MAX_CHUNK_SIZE = 250000; // Maximum chunk size in bytes
-    private const int MAX_DATA_QUEUE_SIZE = 5;
-
-    // Quantization range per axis (must match the sender)
-    float xMin = -0.32f, xMax = 0.32f;
-    float yMin = -0.32f, yMax = 0.32f;
-    float zMin = 0.00f, zMax = 0.64f;
+    private float positionScale = 1000;
+    private const int POINT_POSITIONS_DATA_SIZE = sizeof(short) * 3; // 3 shorts for (x, y, z) positions
+    private const int POINT_COLORS_DATA_SIZE = 3; // 3 bytes for (r, g, b) colors
+    private const int POINT_DATA_SIZE = POINT_POSITIONS_DATA_SIZE + POINT_COLORS_DATA_SIZE;
 
     private enum SignalType : byte
     {
@@ -253,7 +250,7 @@ public class WebRTCManager : NetworkBehaviour
         if (data.Length == 1 && data[0] == 1) // Check for completion flag
         {
             Debug.Log("Point Cloud transfer complete.");
-            DeserializePointCloud(pointCloudBuffer.ToArray(), out receivedVertices, out receivedColors);
+            DeserializePointCloud(pointCloudBuffer.ToArray(), out positionScale, out receivedVertices, out receivedColors);
             hasNewPointCloud = true;
             pointCloudBuffer.Clear();
         }
@@ -264,67 +261,44 @@ public class WebRTCManager : NetworkBehaviour
         }
     }
 
-    private void DeserializePointCloud(byte[] data, out Vector3[] vertices, out Color32[] colors)
+    private void DeserializePointCloud(byte[] data, out float scale, out Vector3[] vertices, out Color32[] colors)
     {
-        // Read header
-        int headerSize = 10;
-        if (data.Length < headerSize)
-        {
-            Debug.LogError("Point cloud data too small to contain header.");
-            vertices = new Vector3[0];
-            colors = new Color32[0];
-            return;
-        }
+        // Read scale (first 2 bytes)
+        scale = BitConverter.ToInt16(data, 0);
 
-        int nPoints = BitConverter.ToInt32(data, 0);
+        int offsetStart = sizeof(short);
 
-        // Min/max encoded as bytes (centimeter precision in range [0, 1])
-        xMin = DecodeByteToFloat(data[4], 0, 1);
-        xMax = DecodeByteToFloat(data[5], 0, 1);
-        yMin = DecodeByteToFloat(data[6], 0, 1);
-        yMax = DecodeByteToFloat(data[7], 0, 1);
-        zMin = DecodeByteToFloat(data[8], 0, 1);
-        zMax = DecodeByteToFloat(data[9], 0, 1);
+        // Determine number of points from total length
+        int nPoints = (data.Length - offsetStart) / POINT_DATA_SIZE;
 
-        // Allocate arrays
         vertices = new Vector3[nPoints];
         colors = new Color32[nPoints];
 
-        int vertexStart = headerSize;
-        int colorStart = vertexStart + nPoints * 3;
+        // Split into positions and colors
+        int positionDataLength = nPoints * POINT_POSITIONS_DATA_SIZE;
 
-        if (data.Length < colorStart + nPoints * 3)
-        {
-            Debug.LogError("Point cloud data is too short for declared number of points.");
-            return;
-        }
-
-        // Decode vertices and colors
+        // Convert position data
         for (int i = 0; i < nPoints; i++)
         {
-            int vi = vertexStart + i * 3;
-            byte bx = data[vi + 0];
-            byte by = data[vi + 1];
-            byte bz = data[vi + 2];
+            int offset = offsetStart + i * 3 * sizeof(short);
+            short x = BitConverter.ToInt16(data, offset);
+            short y = BitConverter.ToInt16(data, offset + 2);
+            short z = BitConverter.ToInt16(data, offset + 4);
 
-            float x = DecodeByteToFloat(bx, xMin, xMax);
-            float y = DecodeByteToFloat(by, yMin, yMax);
-            float z = DecodeByteToFloat(bz, zMin, zMax);
+            vertices[i] = new Vector3(x / positionScale, y / positionScale, z / positionScale);
+        }
 
-            vertices[i] = new Vector3(x, y, z);
+        // Convert color data
+        for (int i = 0; i < nPoints; i++)
+        {
+            int colorOffset = offsetStart + positionDataLength + i * 3;
 
-            int ci = colorStart + i * 3;
-            byte r = data[ci + 0];
-            byte g = data[ci + 1];
-            byte b = data[ci + 2];
+            byte r = data[colorOffset];
+            byte g = data[colorOffset + 1];
+            byte b = data[colorOffset + 2];
 
             colors[i] = new Color32(r, g, b, 255);
         }
-    }
-
-    private float DecodeByteToFloat(byte b, float min, float max)
-    {
-        return (b / 255f) * (max - min) + min;
     }
 
     public bool HasNewDocument() => hasNewDocument;
@@ -337,10 +311,10 @@ public class WebRTCManager : NetworkBehaviour
 
     public bool HasNewPointCloud() => hasNewPointCloud;
 
-    public (Vector3[], Color32[]) GetReceivedPointCloud()
+    public (float, Vector3[], Color32[]) GetReceivedPointCloud()
     {
         hasNewPointCloud = false;
-        return (receivedVertices, receivedColors);
+        return (positionScale, receivedVertices, receivedColors);
     }
 
     private void OnDestroy()

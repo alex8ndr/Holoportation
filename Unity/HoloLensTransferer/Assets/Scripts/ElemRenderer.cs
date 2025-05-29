@@ -8,7 +8,7 @@ public class ElemRenderer : MonoBehaviour
     public Material pointCloudMaterial;
     public float pointSize = 0.005f;
 
-    private Queue<(Vector3[] points, Color32[] colors)> pointCloudQueue = new();
+    private Queue<(float scale, Vector3[] points, Color32[] colors)> pointCloudQueue = new();
     private const int maxQueueSize = 5;
 
     private Mesh mesh;
@@ -41,22 +41,25 @@ public class ElemRenderer : MonoBehaviour
     {
         if (webRTCManager.HasNewPointCloud())
         {
-            var (pts, cols) = webRTCManager.GetReceivedPointCloud();
+            var (scale, pts, cols) = webRTCManager.GetReceivedPointCloud();
             if (pointCloudQueue.Count >= maxQueueSize)
                 pointCloudQueue.Dequeue();
 
-            pointCloudQueue.Enqueue((pts, cols));
+            pointCloudQueue.Enqueue((scale, pts, cols));
         }
 
         if (pointCloudQueue.Count > 0)
         {
-            var (positions, colorData) = pointCloudQueue.Dequeue();
-            UpdateMesh(positions, colorData);
+            var (scale, positions, colorData) = pointCloudQueue.Dequeue();
+            UpdateMesh(scale, positions, colorData);
         }
     }
 
-    void UpdateMesh(Vector3[] positions, Color32[] colorData)
+    void UpdateMesh(float scale, Vector3[] positions, Color32[] colorData)
     {
+        float precision = 1.0f / scale;
+        pointCloudMaterial.SetFloat("_PointSize", precision * 1.25f); // Make the points slightly larger than the precision to fill holes in the point cloud
+
         int count = Mathf.Min(positions.Length, colorData.Length);
         if (count == 0) return;
 
