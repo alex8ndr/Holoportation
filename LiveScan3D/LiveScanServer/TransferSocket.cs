@@ -1,17 +1,19 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 using System.Net.Sockets;
-using System.Runtime.Serialization.Formatters.Binary;
 
 namespace KinectServer
 {
     public class TransferSocket
     {
         TcpClient oSocket;
+
+        // Parameters used to find the scale (precision level of the point cloud)
+        private const short MAX_SCALE = 5000;
+        private const short MIN_SCALE = 300;
+        private const double SCALE_FN_OFFSET = 7522.697578580525;
+        private const double SCALE_FN_FACTOR = 626.6934647055376;
 
         public TransferSocket(TcpClient clientSocket)
         {
@@ -49,21 +51,59 @@ namespace KinectServer
 
         public void SendFrame(List<float> vertices, List<byte> colors)
         {
-            short[] sVertices = Array.ConvertAll(vertices.ToArray(), x => (short)(x * 1000));
+            int originalVertexCount = vertices.Count / 3;
+            short scale = DetermineScale(originalVertexCount);
 
-            
-            int nVerticesToSend = vertices.Count / 3;
-            byte[] buffer = new byte[sizeof(short) * 3 * nVerticesToSend];
-            Buffer.BlockCopy(sVertices, 0, buffer, 0, sizeof(short) * 3 * nVerticesToSend);
+            HashSet<(short, short, short)> uniquePoints = new HashSet<(short, short, short)>();
+            List<short> filteredVertices = new List<short>();
+            List<byte> filteredColors = new List<byte>();
+
+            for (int i = 0; i < vertices.Count; i += 3)
+            {
+                short x = (short)(vertices[i] * scale);
+                short y = (short)(vertices[i + 1] * scale);
+                short z = (short)(vertices[i + 2] * scale);
+
+                var point = (x, y, z);
+                if (uniquePoints.Add(point))
+                {
+                    filteredVertices.Add(x);
+                    filteredVertices.Add(y);
+                    filteredVertices.Add(z);
+
+                    // Copy corresponding RGB color
+                    int colorIndex = i;
+                    filteredColors.Add(colors[colorIndex]);
+                    filteredColors.Add(colors[colorIndex + 1]);
+                    filteredColors.Add(colors[colorIndex + 2]);
+                }
+            }
+
+            int nVerticesToSend = filteredVertices.Count / 3;
+            byte[] buffer = new byte[sizeof(short) * filteredVertices.Count];
+            Buffer.BlockCopy(filteredVertices.ToArray(), 0, buffer, 0, buffer.Length);
+
             try
-            {                 
-                WriteInt(nVerticesToSend);                               
+            {
+                // Send the scale first
+                byte[] scaleBytes = BitConverter.GetBytes(scale);
+                oSocket.GetStream().Write(scaleBytes, 0, scaleBytes.Length);
+
+                WriteInt(nVerticesToSend);
                 oSocket.GetStream().Write(buffer, 0, buffer.Length);
-                oSocket.GetStream().Write(colors.ToArray(), 0, sizeof(byte) * 3 * nVerticesToSend);
+                oSocket.GetStream().Write(filteredColors.ToArray(), 0, filteredColors.Count);
             }
             catch (Exception ex)
             {
             }
+        }
+
+        // Determine scale based on number of vertices
+        private short DetermineScale(int vertexCount)
+        {
+            if (vertexCount <= 0) return MAX_SCALE;
+            short scale = (short)Math.Truncate(SCALE_FN_OFFSET - SCALE_FN_FACTOR * Math.Log(vertexCount));
+            return Math.Max(scale, MIN_SCALE); // Never go below MIN_SCALE
         }
     }
 }

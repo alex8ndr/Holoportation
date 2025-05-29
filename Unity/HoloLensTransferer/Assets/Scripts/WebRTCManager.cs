@@ -13,23 +13,29 @@ using UnityEngine;
 
 public class WebRTCManager : NetworkBehaviour
 {
-    private NetworkRunner networkRunner;
     public bool isSender = true; // This is the sender
+    public GameObject pointCloudElem;
+
+    private NetworkRunner networkRunner;
 
     private byte[] documentData;
     private bool hasNewDocument = false;
 
     private Vector3[] receivedVertices;
-    private Color[] receivedColors;
+    private Color32[] receivedColors;
     private bool hasNewPointCloud = false;
 
     private bool isFusionInitialized = false;
+    private bool isPointCloudPrefabSpawned = false;
 
-    private const float POSITION_SCALE = 1000f;
     private const int MAX_CHUNK_SIZE = 250000; // Maximum chunk size in bytes
     private const int MAX_DATA_QUEUE_SIZE = 5;
-    
-    private int maxReceivedPointcloudSize = 0;
+    private const int POINT_POSITIONS_DATA_SIZE = sizeof(short) * 3; // 3 shorts for (x, y, z) positions
+    private const int POINT_COLORS_DATA_SIZE = 3; // 3 bytes for (r, g, b) colors
+    private const int POINT_DATA_SIZE = POINT_POSITIONS_DATA_SIZE + POINT_COLORS_DATA_SIZE;
+
+    private int maxReceivedPointCloudSize = 0;
+    private float positionScale = 1000;
 
     private PlayerRef currentPlayer;
     private List<PlayerRef> otherPlayers = new();
@@ -62,6 +68,12 @@ public class WebRTCManager : NetworkBehaviour
     {
         if (isFusionInitialized)
         {
+            if (!isPointCloudPrefabSpawned)
+            {
+                SpawnNetworkObject(pointCloudElem, new Vector3(0.0f, 0.0f, 0.0f), Quaternion.identity);
+                isPointCloudPrefabSpawned = true;
+            }
+
             SendQueuedDataForAllChannels();
         }
     }
@@ -318,29 +330,34 @@ public class WebRTCManager : NetworkBehaviour
         this.documentData = documentData;
     }
 
-    public void SendPointCloud(Vector3[] vertices, Color[] colors)
+    public void SendPointCloud(byte[] scale, byte[] vertices, byte[] colors)
     {
         foreach (var player in otherPlayers)
         {
-            SendPointCloudTo(player, vertices, colors);
+            SendPointCloudTo(player, scale, vertices, colors);
         }
     }
 
     // Sending Point Cloud Data in Chunks
-    public void SendPointCloudTo(PlayerRef player, Vector3[] vertices, Color[] colors)
+    public void SendPointCloudTo(PlayerRef player, byte[] scale, byte[] vertices, byte[] colors)
     {
         if (!allPlayerChannels.TryGetValue(player, out var channels) || channels.PointCloudChannel.Channel.State != DataChannel.ChannelState.Open)
         {
             Debug.LogWarning($"No open point cloud channel for player {player.PlayerId}");
             return;
         }
-        
-        // Serialize into a byte array
-        byte[] data = SerializePointCloud(vertices, colors);
 
-        if (data.Length > maxReceivedPointcloudSize)
+        // Concatenate vertices and colors to send them as one transfer
+        byte[] data = new byte[scale.Length + vertices.Length + colors.Length];
+
+        Buffer.BlockCopy(scale, 0, data, 0, scale.Length);
+        Buffer.BlockCopy(vertices, 0, data, scale.Length, vertices.Length);
+        Buffer.BlockCopy(colors, 0, data, scale.Length + vertices.Length, colors.Length);
+
+
+        if (data.Length > maxReceivedPointCloudSize)
         {
-            maxReceivedPointcloudSize = data.Length;
+            maxReceivedPointCloudSize = data.Length;
         }
 
         // Enqueue the data for later sending
@@ -349,9 +366,9 @@ public class WebRTCManager : NetworkBehaviour
             channels.PointCloudChannel.DataQueue.Enqueue(data);
         }
 
+        // Update variables for local rendering
         hasNewPointCloud = true;
-        receivedVertices = vertices;
-        receivedColors = colors;
+        DeserializePointCloud(data, out positionScale, out receivedVertices, out receivedColors);
     }
 
     private void SendInChunksOnChannel(DataChannel channel, byte[] data)
@@ -390,35 +407,50 @@ public class WebRTCManager : NetworkBehaviour
         channel.SendMessage(completionMessage);
     }
 
-    private byte[] SerializePointCloud(Vector3[] vertices, Color[] colors)
+    private void DeserializePointCloud(byte[] data, out float scale, out Vector3[] vertices, out Color32[] colors)
     {
-        using (MemoryStream stream = new MemoryStream())
-        using (BinaryWriter writer = new BinaryWriter(stream))
+        // Read scale (first 2 bytes)
+        scale = BitConverter.ToInt16(data, 0);
+
+        int offsetStart = sizeof(short);
+
+        // Determine number of points from total length
+        int nPoints = (data.Length - offsetStart) / POINT_DATA_SIZE;
+
+        vertices = new Vector3[nPoints];
+        colors = new Color32[nPoints];
+
+        // Split into positions and colors
+        int positionDataLength = nPoints * POINT_POSITIONS_DATA_SIZE;
+
+        // Convert position data
+        for (int i = 0; i < nPoints; i++)
         {
-            writer.Write(vertices.Length);
+            int offset = offsetStart + i * 3 * sizeof(short);
+            short x = BitConverter.ToInt16(data, offset);
+            short y = BitConverter.ToInt16(data, offset + 2);
+            short z = BitConverter.ToInt16(data, offset + 4);
 
-            foreach (var vertex in vertices)
-            {
-                writer.Write((short)(vertex.x * POSITION_SCALE));
-                writer.Write((short)(vertex.y * POSITION_SCALE));
-                writer.Write((short)(vertex.z * POSITION_SCALE));
-            }
+            vertices[i] = new Vector3(x / positionScale, y / positionScale, z / positionScale);
+        }
 
-            foreach (var color in colors)
-            {
-                writer.Write((byte)(color.r * 255));
-                writer.Write((byte)(color.g * 255));
-                writer.Write((byte)(color.b * 255));
-            }
+        // Convert color data
+        for (int i = 0; i < nPoints; i++)
+        {
+            int colorOffset = offsetStart + positionDataLength + i * 3;
 
-            return stream.ToArray();
+            byte r = data[colorOffset];
+            byte g = data[colorOffset + 1];
+            byte b = data[colorOffset + 2];
+
+            colors[i] = new Color32(r, g, b, 255);
         }
     }
 
     private void BufferingChanged(DataChannel datachannel, ulong previous, ulong current, ulong limit)
     {
         // Check if there is enough room in the buffer to send the largest point cloud received in this session
-        if (current + (ulong)maxReceivedPointcloudSize >= limit)
+        if (current + (ulong)maxReceivedPointCloudSize >= limit)
         {
             var keys = allPlayerChannels.Keys.ToList();
 
@@ -452,7 +484,7 @@ public class WebRTCManager : NetworkBehaviour
                     var docChannel = playerChannels.DocumentChannel;
                     if (!docChannel.CanSend) // Only update if needed
                     {
-                        docChannel.CanSend = true;;
+                        docChannel.CanSend = true; ;
                     }
                     return;
                 }
@@ -462,7 +494,7 @@ public class WebRTCManager : NetworkBehaviour
                     var pcChannel = playerChannels.PointCloudChannel;
                     if (!pcChannel.CanSend) // Only update if needed
                     {
-                        pcChannel.CanSend = true;;
+                        pcChannel.CanSend = true; ;
                     }
                     return;
                 }
@@ -507,10 +539,10 @@ public class WebRTCManager : NetworkBehaviour
 
     public bool HasNewPointCloud() => hasNewPointCloud;
 
-    public (Vector3[], Color[]) GetReceivedPointCloud()
+    public (float, Vector3[], Color32[]) GetReceivedPointCloud()
     {
         hasNewPointCloud = false;
-        return (receivedVertices, receivedColors);
+        return (positionScale, receivedVertices, receivedColors);
     }
 
     private void OnDestroy()
