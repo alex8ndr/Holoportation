@@ -46,6 +46,10 @@ private:
     k4a_transformation_t transformationColorDownscaled = NULL;
     k4a_transformation_t transformation = NULL;
 
+    cv::Mat cImg;
+    cv::Mat cImgResized;
+    cv::Mat maskedImg;
+
     int colorImageDownscaledWidth;
     int colorImageDownscaledHeight;
 

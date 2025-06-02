@@ -88,7 +88,7 @@ private:
     void SendFrame(vector<Point3s> vertices, vector<RGB> RGB, vector<Body> body);
 
     void SocketThreadFunction();
-    void StoreFrame(Point3f* vertices, RGB* colorInDepth, vector<Body>& bodies, BYTE* bodyIndex);
+    void ProcessFrame(Point3f* vertices, RGB* colorInDepth, vector<Body>& bodies, BYTE* bodyIndex);
     void ShowFPS();
     void ReadIPFromFile();
     void WriteIPToFile();

@@ -131,8 +131,8 @@ bool AzureKinectCapture::Initialize(SYNC_STATE state, int syncOffsetMultiplier)
     k4a_device_configuration_t config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
     config.camera_fps = K4A_FRAMES_PER_SECOND_30;
     config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
-    config.color_resolution = K4A_COLOR_RESOLUTION_1440P;
-    config.depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
+    config.color_resolution = K4A_COLOR_RESOLUTION_720P;
+    config.depth_mode = K4A_DEPTH_MODE_NFOV_UNBINNED;
     config.synchronized_images_only = true;
 
     if (state == Master)
@@ -204,12 +204,12 @@ bool AzureKinectCapture::Initialize(SYNC_STATE state, int syncOffsetMultiplier)
         break;
     }
 
-    // It's crucial for this program to output accurately mapped Pointclouds. The highest accuracy mapping is achieved
+    // It's crucial for this program to output accurately mapped point clouds. The highest accuracy mapping is achieved
     // by using the k4a_transformation_depth_image_to_color_camera function. However this converts a small depth image
     // to a larger size, equivalent to the the color image size. This means more points to process and higher processing costs
     // We can however scale the color image to the depth images size beforehand, to reduce proccesing power.
 
-    // We calculate the minimum size that the color Image can be, while preserving its aspect ration
+    // We calculate the minimum size that the color Image can be while preserving its aspect ratio
     float rescaleRatio = (float)calibration.color_camera_calibration.resolution_height / (float)depth_camera_height;
     colorImageDownscaledHeight = depth_camera_height;
     colorImageDownscaledWidth = calibration.color_camera_calibration.resolution_width / rescaleRatio;
@@ -286,20 +286,16 @@ bool AzureKinectCapture::AcquireFrame()
         return false;
     }
 
+    // Release previous images
     k4a_image_release(colorImage);
     k4a_image_release(colorImageDownscaled);
     k4a_image_release(depthImage);
 
+    // Get color + depth
     colorImage = k4a_capture_get_color_image(capture);
     depthImage = k4a_capture_get_depth_image(capture);
 
-    currentTimeStamp = k4a_image_get_device_timestamp_usec(colorImage);
-
-    if (colorImage == NULL || depthImage == NULL)
-    {
-        k4a_capture_release(capture);
-        return false;
-    }
+    k4a_capture_release(capture);
 
     if (colorImage == NULL || depthImage == NULL)
     {
@@ -308,16 +304,21 @@ bool AzureKinectCapture::AcquireFrame()
     }
 
     // Convert the k4a_image to an OpenCV Mat
-    cv::Mat cImg = cv::Mat(k4a_image_get_height_pixels(colorImage),
+    cImg = cv::Mat(k4a_image_get_height_pixels(colorImage),
         k4a_image_get_width_pixels(colorImage),
         CV_8UC4, k4a_image_get_buffer(colorImage));
 
+    currentTimeStamp = k4a_image_get_device_timestamp_usec(colorImage);
+
+    // ==========================
+    // Document Detection Branch
+    // ==========================
     // Get the current time and check the interval
     auto now = std::chrono::steady_clock::now();
     auto nowMs = std::chrono::time_point_cast<std::chrono::milliseconds>(now).time_since_epoch().count();
     if (nowMs - lastFrameTime.count() >= FRAME_SEND_INTERVAL_MS)
     {
-        // Create a temporary depth image for TCP sending (do not touch global transformedDepthImage)
+        // Create a temporary transformed depth image
         k4a_image_t tcpTransformedDepthImage = NULL;
         k4a_image_create(K4A_IMAGE_FORMAT_DEPTH16,
                          k4a_image_get_width_pixels(colorImage),
@@ -325,40 +326,56 @@ bool AzureKinectCapture::AcquireFrame()
                          k4a_image_get_width_pixels(colorImage) * sizeof(uint16_t),
                          &tcpTransformedDepthImage);
 
-        // Transform depth image to color camera's coordinate space into our temp image
+        // Transform depth into color space (for document masking)
         k4a_transformation_depth_image_to_color_camera(transformation, depthImage, tcpTransformedDepthImage);
 
-        // Create a copy of cImg for masking
-        cv::Mat maskedImg = cImg.clone();
+        // Allocate masked image only once (or if size changed)
+        if (maskedImg.empty() || maskedImg.size() != cImg.size())
+            maskedImg = cv::Mat(cImg.size(), CV_8UC4);
 
-        // Apply depth mask: remove pixels further than 50cm and parts with no depth data
+        cImg.copyTo(maskedImg);
+
+        // Remove pixels further than 75cm and parts with no depth data
         {
             cv::Mat depthMat = cv::Mat(k4a_image_get_height_pixels(tcpTransformedDepthImage),
                 k4a_image_get_width_pixels(tcpTransformedDepthImage),
-                CV_16U, k4a_image_get_buffer(tcpTransformedDepthImage));
-            cv::Mat mask = (depthMat == 0) | (depthMat > 750);
+                CV_16U,
+                k4a_image_get_buffer(tcpTransformedDepthImage));
+            cv::Mat mask = (depthMat == 0) | (depthMat > 750); // 750mm = 75cm max doc depth
             maskedImg.setTo(cv::Scalar(0, 0, 0, 255), mask);
         }
 
         {
             std::unique_lock<std::mutex> lock(queueMutex);
             while (!frameQueue.empty()) { frameQueue.pop(); }
-            frameQueue.push(maskedImg.clone());
+            frameQueue.push(maskedImg.clone()); // keep RGB+mask for TCP send
         }
+
         queueCondition.notify_one();
         lastFrameTime = std::chrono::milliseconds(nowMs);
 
-        // Release the temporary image so global transformedDepthImage remains intact
+        // Release the temporary image
         k4a_image_release(tcpTransformedDepthImage);
     }
 
-    // Resize the k4a_image to the precalculated size. Takes quite a long time, maybe there is a faster algorithm?
-    cv::resize(cImg, cImg, cv::Size(colorImageDownscaledWidth, colorImageDownscaledHeight), cv::INTER_LINEAR);
+    // ==========================
+    // Point Cloud Branch
+    // ==========================
+
+    // Allocate resized output only once (or if size changed)
+    if (cImgResized.empty() || cImgResized.rows != colorImageDownscaledHeight || cImgResized.cols != colorImageDownscaledWidth)
+    {
+        cImgResized = cv::Mat(colorImageDownscaledHeight, colorImageDownscaledWidth, CV_8UC4);
+    }
+
+    // Resize the k4a_image to the precalculated size
+    cv::resize(cImg, cImgResized, cImgResized.size(), 0, 0, cv::INTER_NEAREST);
 
     // Create a k4a_image from the resized OpenCV Mat. Code taken from here: https://github.com/microsoft/Azure-Kinect-Sensor-SDK/issues/978#issuecomment-566002061
-    k4a_image_create(K4A_IMAGE_FORMAT_COLOR_BGRA32, cImg.cols, cImg.rows, cImg.cols * 4 * (int)sizeof(uint8_t), &colorImageDownscaled);
-    memcpy(k4a_image_get_buffer(colorImageDownscaled), &cImg.ptr<cv::Vec4b>(0)[0], cImg.rows * cImg.cols * sizeof(cv::Vec4b));
+    k4a_image_create(K4A_IMAGE_FORMAT_COLOR_BGRA32, cImgResized.cols, cImgResized.rows, cImgResized.cols * 4 * (int)sizeof(uint8_t), &colorImageDownscaled);
+    memcpy(k4a_image_get_buffer(colorImageDownscaled), &cImgResized.ptr<cv::Vec4b>(0)[0], cImgResized.rows * cImgResized.cols * sizeof(cv::Vec4b));
 
+    // Init buffers if needed
     if (pColorRGBX == NULL)
     {
         nColorFrameHeight = k4a_image_get_height_pixels(colorImageDownscaled);
@@ -372,11 +389,10 @@ bool AzureKinectCapture::AcquireFrame()
         nDepthFrameWidth = k4a_image_get_width_pixels(depthImage);
         pDepth = new UINT16[nDepthFrameHeight * nDepthFrameWidth];
     }
-
-    memcpy(pColorRGBX, k4a_image_get_buffer(colorImageDownscaled), nColorFrameWidth * nColorFrameHeight * sizeof(RGB));
-    memcpy(pDepth, k4a_image_get_buffer(depthImage), nDepthFrameHeight * nDepthFrameWidth * sizeof(UINT16));
-
-    k4a_capture_release(capture);
+    
+    // Assign pointers to new images
+    pColorRGBX = reinterpret_cast<RGB*>(k4a_image_get_buffer(colorImageDownscaled));
+    pDepth = reinterpret_cast<UINT16*>(k4a_image_get_buffer(depthImage));
 
     return true;
 }

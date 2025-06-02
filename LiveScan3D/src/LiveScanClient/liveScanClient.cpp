@@ -22,8 +22,29 @@
 #include "zstd.h"
 #include <shellapi.h>
 
+#include <iostream>
+
 
 std::mutex m_mSocketThreadMutex;
+
+std::ofstream logFile;
+
+void SetupLogging()
+{
+	// Create or open the log file
+	logFile.open("Log/app_log.txt", std::ios::out | std::ios::app);
+	if (!logFile.is_open())
+	{
+		std::cerr << "Failed to open log file.\n";
+		return;
+	}
+
+	// Redirect cout and cerr to the file
+	std::cout.rdbuf(logFile.rdbuf());
+	std::cerr.rdbuf(logFile.rdbuf());
+
+	std::cout << "==== Application Started ====" << std::endl;
+}
 
 int APIENTRY wWinMain(
 	_In_ HINSTANCE hInstance,
@@ -56,6 +77,7 @@ int APIENTRY wWinMain(
 	}
 	LocalFree(argv);
 
+	SetupLogging();
 	LiveScanClient application;
 	application.Run(hInstance, nShowCmd, headless, autoconnect, serverAddress);
 }
@@ -253,7 +275,7 @@ void LiveScanClient::UpdateFrame()
 
 	{
 		std::lock_guard<std::mutex> lock(m_mSocketThreadMutex);
-		StoreFrame(m_pCameraSpaceCoordinates, pCapture->pColorRGBX, pCapture->vBodies, pCapture->pBodyIndex);
+		ProcessFrame(m_pCameraSpaceCoordinates, pCapture->pColorRGBX, pCapture->vBodies, pCapture->pBodyIndex);
 
 		if (m_bCaptureFrame)
 		{
@@ -897,7 +919,7 @@ void LiveScanClient::SendFrame(vector<Point3s> vertices, vector<RGB> RGB, vector
 	m_pClientSocket->SendBytes(buffer.data(), size);
 }
 
-void LiveScanClient::StoreFrame(Point3f *vertices, RGB *colorInDepth, vector<Body> &bodies, BYTE* bodyIndex)
+void LiveScanClient::ProcessFrame(Point3f *vertices, RGB *colorInDepth, vector<Body> &bodies, BYTE* bodyIndex)
 {
 	unsigned int nVertices = pCapture->nColorFrameHeight * pCapture->nColorFrameWidth;
 
