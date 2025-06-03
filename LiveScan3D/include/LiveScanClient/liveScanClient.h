@@ -1,5 +1,14 @@
 #pragma once
 
+
+#define WIN32_LEAN_AND_MEAN
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
+#define _WINSOCKAPI_
+
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+
 #include "resource.h"
 #include "ImageRenderer.h"
 #include "SocketCS.h"
@@ -8,20 +17,25 @@
 #include "frameFileWriterReader.h"
 #include <thread>
 #include <mutex>
+#include <functional>
 
 class LiveScanClient
 {
 public:
-    LiveScanClient();
+    LiveScanClient(int index);
     ~LiveScanClient();
 
-    static LRESULT CALLBACK MessageRouter(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-    LRESULT CALLBACK        DlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-    int                     Run(HINSTANCE hInstance, int nCmdShow, bool headless = false, bool autoconnect = false, std::wstring serverAddress = L"");
+    void Run(HINSTANCE hInstance, int nCmdShow, bool headless = false, bool autoconnect = false, std::wstring serverAddress = L"");
+    void RequestExit();
+    std::function<void(const std::string&)> GetLogger();
 
     bool m_bSocketThread;
 
 private:
+    std::ofstream m_logFile;
+
+    int m_index = 0;
+
     Calibration calibration;
 
     bool m_bCalibrate;
@@ -49,6 +63,8 @@ private:
     int m_iCompressionLevel;
     bool m_bAutoExposureEnabled;
     int m_nExposureStep;
+
+    volatile bool m_bExitRequested = false;
 
     enum tempSyncConfig { MASTER, SUBORDINATE, STANDALONE };
     tempSyncConfig currentTempSyncState;
@@ -79,17 +95,12 @@ private:
     RGB* m_pDepthRGBX;
 
     void UpdateFrame();
-    void ShowColor();
-    void ShowDepth();
-
-    bool SetStatusMessage(_In_z_ WCHAR* szMessage, DWORD nShowTimeMsec, bool bForce);
 
     void HandleSocket();
     void SendFrame(vector<Point3s> vertices, vector<RGB> RGB, vector<Body> body);
 
     void SocketThreadFunction();
     void ProcessFrame(Point3f* vertices, RGB* colorInDepth, vector<Body>& bodies, BYTE* bodyIndex);
-    void ShowFPS();
-    void ReadIPFromFile();
-    void WriteIPToFile();
+    void SetupLogging(int clientIndex);
+    void Log(const std::string& message);
 };

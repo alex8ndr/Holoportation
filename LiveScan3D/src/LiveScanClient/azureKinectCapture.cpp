@@ -14,7 +14,7 @@
 #define SERVER_PORT_SEND 48003
 #define FRAME_SEND_INTERVAL_MS 500
 
-AzureKinectCapture::AzureKinectCapture() : stopSending(false), lastFrameTime(0)
+AzureKinectCapture::AzureKinectCapture(int deviceIndex) : m_deviceIndex(deviceIndex), stopSending(false), lastFrameTime(0)
 {
     // Initialize Winsock
     WSADATA wsaData;
@@ -74,10 +74,15 @@ AzureKinectCapture::~AzureKinectCapture()
     WSACleanup();
 }
 
+void AzureKinectCapture::SetLogger(std::function<void(const std::string&)> loggerFunc) {
+    m_logger = loggerFunc;
+}
+
 bool AzureKinectCapture::Initialize(SYNC_STATE state, int syncOffsetMultiplier)
 {
     uint32_t count = k4a_device_get_installed_count();
-    int deviceIdx = 0;
+
+    int deviceIdx = m_deviceIndex;
 
     // We save the deviceId of this Client.
     // When the cameras are reinitialized during runtime, we can then guarantee
@@ -95,11 +100,11 @@ bool AzureKinectCapture::Initialize(SYNC_STATE state, int syncOffsetMultiplier)
         result = k4a_device_get_version(kinectSensor, &version_info);
         if (result == K4A_RESULT_SUCCEEDED)
         {
-            std::cout << "Device opened successfully at index: " << deviceIdx << std::endl;
+            if (m_logger) m_logger("Device opened successfully at index: " + std::to_string(deviceIdx));
             break; // Device opened and valid
         }
 
-        std::cout << "Failed to open device at index: " << deviceIdx << std::endl;
+        if (m_logger) m_logger("Failed to open device at index: " + std::to_string(deviceIdx));
 
         if (deviceIDForRestart == -1)
         {
@@ -282,6 +287,7 @@ bool AzureKinectCapture::AcquireFrame()
     k4a_wait_result_t captureResult = k4a_device_get_capture(kinectSensor, &capture, captureTimeoutMs);
     if (captureResult != K4A_WAIT_RESULT_SUCCEEDED)
     {
+        if (m_logger) m_logger("Frame could not be acquired");
         k4a_capture_release(capture);
         return false;
     }

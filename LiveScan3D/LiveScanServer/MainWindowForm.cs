@@ -70,7 +70,7 @@ namespace KinectServer
         //The live view window class
         OpenGLWindow oOpenGLWindow;
 
-        List<Process> liveScanClientProcesses = new List<Process>();
+        List<NativeLiveScanClient> liveScanClients = new List<NativeLiveScanClient>();
 
         public MainWindowForm()
         {
@@ -105,12 +105,9 @@ namespace KinectServer
             // Start multiple instances of LiveScanClient.exe in headless and autoconnect mode
             for (int i = 0; i < count; i++)
             {
-                Process liveScanClientProcess = new Process();
-                liveScanClientProcess.StartInfo.FileName = "LiveScanClient.exe";
-                liveScanClientProcess.StartInfo.WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory; // Set the working directory to the server's directory
-                liveScanClientProcess.StartInfo.Arguments = "--headless --autoconnect 127.0.0.1"; // Add the arguments for headless and autoconnect mode
-                liveScanClientProcess.Start();
-                liveScanClientProcesses.Add(liveScanClientProcess);
+                var client = new NativeLiveScanClient(i, "127.0.0.1", true);
+                client.Start();
+                liveScanClients.Add(client);
             }
         }
 
@@ -126,13 +123,10 @@ namespace KinectServer
             oServer.StopServer();
             oTransferServer.StopServer();
 
-            // Ensure all LiveScanClient processes are terminated
-            foreach (var process in liveScanClientProcesses)
+            // Ensure all LiveScanClients are terminated
+            foreach (var client in liveScanClients)
             {
-                if (!process.HasExited)
-                {
-                    process.Kill();
-                }
+                client.Stop();
             }
         }
 

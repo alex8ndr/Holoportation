@@ -1,14 +1,20 @@
 #pragma once
 
-#include "stdafx.h"
+#define WIN32_LEAN_AND_MEAN
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
+#define _WINSOCKAPI_
+
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+
 #include "ICapture.h"
 #include <k4a/k4a.h>
 #include <opencv2/opencv.hpp>
 #include "utils.h"
+#include <functional>
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
-#include <winsock2.h>
-#include <ws2tcpip.h>
 #include <thread>
 #include <atomic>
 #include <queue>
@@ -18,7 +24,7 @@
 class AzureKinectCapture : public ICapture
 {
 public:
-    AzureKinectCapture();
+    AzureKinectCapture(int deviceIndex = 0);
     ~AzureKinectCapture();
 
     bool Initialize(SYNC_STATE state, int syncOffset);
@@ -32,8 +38,13 @@ public:
     uint64_t GetTimeStamp();
     int GetDeviceIndex();
     void SetExposureState(bool enableAutoExposure, int exposureStep);
+    void SetLogger(std::function<void(const std::string&)> loggerFunc);
+
+protected:
+    std::function<void(const std::string&)> m_logger;
 
 private:
+    int m_deviceIndex = 0;
     k4a_device_t kinectSensor = NULL;
     int32_t captureTimeoutMs = 1000;
     k4a_image_t colorImage = NULL;

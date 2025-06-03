@@ -60,6 +60,7 @@
     <Compile Include="KinectServer.cs" />
     <Compile Include="KinectSettings.cs" />
     <Compile Include="KinectSocket.cs" />
+    <Compile Include="NativeLiveScanClient.cs" />
     <Compile Include="OpenGLWindow.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

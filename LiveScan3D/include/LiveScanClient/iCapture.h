@@ -15,6 +15,7 @@
 #pragma once
 
 #include "utils.h"
+#include <functional>
 
 struct Joint
 {
@@ -51,7 +52,7 @@ public:
 	virtual uint64_t GetTimeStamp() = 0;
 	virtual int GetDeviceIndex() = 0;
 	virtual void SetExposureState(bool enableAutoExposure, int exposureStep) = 0;
-	
+	virtual void SetLogger(std::function<void(const std::string&)> loggerFunc) = 0;
 
 	bool bInitialized;
 

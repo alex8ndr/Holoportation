@@ -27,62 +27,46 @@
 
 std::mutex m_mSocketThreadMutex;
 
-std::ofstream logFile;
+std::function<void(const std::string&)> LiveScanClient::GetLogger() {
+	return [this](const std::string& msg) { this->Log(msg); };
+}
 
-void SetupLogging()
+void LiveScanClient::SetupLogging(int clientIndex)
 {
-	// Create or open the log file
-	logFile.open("Log/app_log.txt", std::ios::out | std::ios::app);
-	if (!logFile.is_open())
+	wchar_t buffer[MAX_PATH];
+	GetModuleFileNameW(NULL, buffer, MAX_PATH);
+	std::wstring path(buffer);
+	std::wstring dir = path.substr(0, path.find_last_of(L"\\/")) + L"\\Log";
+
+	CreateDirectoryW(dir.c_str(), NULL);
+
+	std::wstring logPath = dir + L"\\app_log_client_" + std::to_wstring(clientIndex) + L".txt";
+	m_logFile.open(logPath, std::ios::out | std::ios::app);
+
+	if (!m_logFile.is_open())
 	{
-		std::cerr << "Failed to open log file.\n";
+		OutputDebugStringW(L"Failed to open log file.\n");
 		return;
 	}
 
-	// Redirect cout and cerr to the file
-	std::cout.rdbuf(logFile.rdbuf());
-	std::cerr.rdbuf(logFile.rdbuf());
-
-	std::cout << "==== Application Started ====" << std::endl;
+	Log("==== Application Started (Client " + std::to_string(clientIndex) + ") ====");
 }
 
-int APIENTRY wWinMain(
-	_In_ HINSTANCE hInstance,
-	_In_opt_ HINSTANCE hPrevInstance,
-	_In_ LPWSTR lpCmdLine,
-	_In_ int nShowCmd
-)
+void LiveScanClient::Log(const std::string& message)
 {
-	UNREFERENCED_PARAMETER(hPrevInstance);
-	UNREFERENCED_PARAMETER(lpCmdLine);
-
-	bool headless = false;
-	bool autoconnect = false;
-	std::wstring serverAddress;
-
-	// Parse command-line arguments
-	int argc;
-	LPWSTR* argv = CommandLineToArgvW(lpCmdLine, &argc);
-	for (int i = 0; i < argc; ++i)
+	if (m_logFile.is_open())
 	{
-		if (wcscmp(argv[i], L"--headless") == 0)
-		{
-			headless = true;
-		}
-		else if (wcscmp(argv[i], L"--autoconnect") == 0 && i + 1 < argc)
-		{
-			autoconnect = true;
-			serverAddress = argv[++i];
-		}
+		m_logFile << message << std::endl;
+		m_logFile.flush();
 	}
-	LocalFree(argv);
-
-	SetupLogging();
-	LiveScanClient application;
-	application.Run(hInstance, nShowCmd, headless, autoconnect, serverAddress);
+	else
+	{
+		OutputDebugStringA((message + "\n").c_str()); // fallback to debugger output
+	}
 }
 
-LiveScanClient::LiveScanClient() :
+LiveScanClient::LiveScanClient(int index) :
+	m_index(index),
 	m_hWnd(NULL),
 	m_nLastCounter(0),
 	m_nFramesSinceUpdate(0),
@@ -113,7 +97,9 @@ LiveScanClient::LiveScanClient() :
 	m_bAutoExposureEnabled(true), // Which state the Auto Exposure should be set to
 	m_nExposureStep(-5)
 {
-	pCapture = new AzureKinectCapture();
+	pCapture = new AzureKinectCapture(index);
+	pCapture->SetLogger(GetLogger());
+
 
     LARGE_INTEGER qpf = {0};
     if (QueryPerformanceFrequency(&qpf))
@@ -177,38 +163,12 @@ LiveScanClient::~LiveScanClient()
     SafeRelease(m_pD2DFactory);
 }
 
-int LiveScanClient::Run(HINSTANCE hInstance, int nCmdShow, bool headless, bool autoconnect, std::wstring serverAddress)
+void LiveScanClient::Run(HINSTANCE hInstance, int nCmdShow, bool headless, bool autoconnect, std::wstring serverAddress)
 {
-	MSG       msg = { 0 };
-	WNDCLASS  wc;
-	HWND      hWndApp = NULL;
+	SetupLogging(m_index);
 
-	if (true)
-	{
-		// Dialog custom window class
-		ZeroMemory(&wc, sizeof(wc));
-		wc.style = CS_HREDRAW | CS_VREDRAW;
-		wc.cbWndExtra = DLGWINDOWEXTRA;
-		wc.hCursor = LoadCursorW(NULL, IDC_ARROW);
-		wc.hIcon = LoadIconW(hInstance, MAKEINTRESOURCE(IDI_APP));
-		wc.lpfnWndProc = DefDlgProcW;
-		wc.lpszClassName = L"LiveScanClientAppDlgWndClass";
-
-		if (!RegisterClassW(&wc))
-		{
-			return 0;
-		}
-
-		// Create main application window
-		HWND hWndApp = CreateDialogParamW(
-			NULL,
-			MAKEINTRESOURCE(IDD_APP),
-			NULL,
-			(DLGPROC)LiveScanClient::MessageRouter,
-			reinterpret_cast<LPARAM>(this));
-
-		// Show window
-		if (!headless) ShowWindow(hWndApp, nCmdShow);
+	if (!hInstance) {
+		hInstance = GetModuleHandle(NULL); // For DLL usage
 	}
 
 	if (autoconnect)
@@ -225,38 +185,39 @@ int LiveScanClient::Run(HINSTANCE hInstance, int nCmdShow, bool headless, bool a
 			}
 			catch (...)
 			{
-				SetStatusMessage(L"Failed to connect. Retrying...", 1000, true);
+				Log("Failed to connect. Retrying...");
 				std::this_thread::sleep_for(std::chrono::seconds(1)); // Wait for 1 second before retrying
 			}
 		}
 	}
 
+	if (headless)
+	{
+		bool res = pCapture->Initialize(Standalone, 0);
+		if (res)
+		{
+			calibration.LoadCalibration(pCapture->serialNumber);
+			m_pDepthRGBX = new RGB[pCapture->nColorFrameWidth * pCapture->nColorFrameHeight];
+			m_pDepthInColorSpace = new UINT16[pCapture->nColorFrameWidth * pCapture->nColorFrameHeight];
+			m_pCameraSpaceCoordinates = new Point3f[pCapture->nColorFrameWidth * pCapture->nColorFrameHeight];
+			m_pColorInColorSpace = new RGB[pCapture->nColorFrameWidth * pCapture->nColorFrameHeight];
+			pCapture->SetExposureState(true, 0);
+		}
+		else
+		{
+			std::cerr << "[LiveScanClient] Failed to initialize capture device." << std::endl;
+		}
+	}
+
 	std::thread t1(&LiveScanClient::SocketThreadFunction, this);
 	// Main message loop
-	while (WM_QUIT != msg.message)
+	while (!m_bExitRequested)
 	{
 		UpdateFrame();
-
-		while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE))
-		{
-			if (WM_QUIT == msg.message)
-			{
-				break;
-			}
-			// If a dialog message will be taken care of by the dialog proc
-			if (!headless && hWndApp && IsDialogMessageW(hWndApp, &msg))
-			{
-				continue;
-			}
-
-			TranslateMessage(&msg);
-			DispatchMessageW(&msg);
-		}
 	}
 
 	m_bSocketThread = false;
 	t1.join();
-	return static_cast<int>(msg.wParam);
 }
 
 void LiveScanClient::UpdateFrame()
@@ -303,191 +264,6 @@ void LiveScanClient::UpdateFrame()
 			m_bCalibrate = false;
 		}
 	}
-
-	if (!m_bShowDepth)
-		ShowColor();
-	else
-		ShowDepth();
-
-	ShowFPS();
-}
-
-LRESULT CALLBACK LiveScanClient::MessageRouter(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-    LiveScanClient* pThis = NULL;
-
-    if (WM_INITDIALOG == uMsg)
-    {
-        pThis = reinterpret_cast<LiveScanClient*>(lParam);
-        SetWindowLongPtr(hWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(pThis));
-    }
-    else
-    {
-        pThis = reinterpret_cast<LiveScanClient*>(::GetWindowLongPtr(hWnd, GWLP_USERDATA));
-    }
-
-    if (pThis)
-    {
-        return pThis->DlgProc(hWnd, uMsg, wParam, lParam);
-    }
-
-    return 0;
-}
-
-LRESULT CALLBACK LiveScanClient::DlgProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
-{
-    UNREFERENCED_PARAMETER(wParam);
-    UNREFERENCED_PARAMETER(lParam);
-
-    switch (message)
-    {
-        case WM_INITDIALOG:
-        {
-            // Bind application window handle
-            m_hWnd = hWnd;
-
-            // Init Direct2D
-            D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &m_pD2DFactory);
-
-            // Get and initialize the default Kinect sensor as standalone
-			bool res = pCapture->Initialize(Standalone, 0);
-			if (res)
-			{
-				calibration.LoadCalibration(pCapture->serialNumber);
-				m_pDepthRGBX = new RGB[pCapture->nColorFrameWidth * pCapture->nColorFrameHeight];
-				m_pDepthInColorSpace = new UINT16[pCapture->nColorFrameWidth * pCapture->nColorFrameHeight];
-				m_pCameraSpaceCoordinates = new Point3f[pCapture->nColorFrameWidth * pCapture->nColorFrameHeight];
-				m_pColorInColorSpace = new RGB[pCapture->nColorFrameWidth * pCapture->nColorFrameHeight];
-        pCapture->SetExposureState(true, 0);
-			}
-			else
-			{
-				SetStatusMessage(L"Capture device failed to initialize!", 10000, true);
-			}
-
-			// Create and initialize a new Direct2D image renderer (take a look at ImageRenderer.h)
-			// We'll use this to draw the data we receive from the Kinect to the screen
-			HRESULT hr;
-			m_pDrawColor = new ImageRenderer();
-			hr = m_pDrawColor->Initialize(GetDlgItem(m_hWnd, IDC_VIDEOVIEW), m_pD2DFactory, pCapture->nColorFrameWidth, pCapture->nColorFrameHeight, pCapture->nColorFrameWidth * sizeof(RGB));
-			if (FAILED(hr))
-			{
-				SetStatusMessage(L"Failed to initialize the Direct2D draw device.", 10000, true);
-			}
-
-			ReadIPFromFile();
-        }
-        break;
-
-        // If the titlebar X is clicked, destroy app
-		case WM_CLOSE:
-			WriteIPToFile();
-			DestroyWindow(hWnd);
-			break;
-        case WM_DESTROY:
-            // Quit the main message pump
-            PostQuitMessage(0);
-            break;
-
-        // Handle button press
-        case WM_COMMAND:
-			if (IDC_BUTTON_CONNECT == LOWORD(wParam) && BN_CLICKED == HIWORD(wParam))
-			{
-				std::lock_guard<std::mutex> lock(m_mSocketThreadMutex);
-				if (m_bConnected)
-				{
-					delete m_pClientSocket;
-					m_pClientSocket = NULL;
-
-					m_bConnected = false;
-					SetDlgItemTextA(m_hWnd, IDC_BUTTON_CONNECT, "Connect");
-				}
-				else
-				{
-					try
-					{
-						char address[20];
-						GetDlgItemTextA(m_hWnd, IDC_IP, address, 20);
-						m_pClientSocket = new SocketClient(address, 48001);
-
-						m_bConnected = true;
-						if (calibration.bCalibrated)
-							m_bConfirmCalibrated = true;
-
-						SetDlgItemTextA(m_hWnd, IDC_BUTTON_CONNECT, "Disconnect");
-						//Clear the status bar so that the "Failed to connect..." disappears.
-						SetStatusMessage(L"", 1, true);
-					}
-					catch (...)
-					{
-						SetStatusMessage(L"Failed to connect. Did you start the server?", 10000, true);
-					}
-				}
-			}
-			if (IDC_BUTTON_SWITCH == LOWORD(wParam) && BN_CLICKED == HIWORD(wParam))
-			{
-				m_bShowDepth = !m_bShowDepth;
-
-				if (m_bShowDepth)
-				{
-					SetDlgItemTextA(m_hWnd, IDC_BUTTON_SWITCH, "Show color");
-				}
-				else
-				{
-					SetDlgItemTextA(m_hWnd, IDC_BUTTON_SWITCH, "Show depth");
-				}
-			}
-            break;
-    }
-
-    return FALSE;
-}
-
-void LiveScanClient::ShowDepth()
-{
-	// Make sure we've received valid data
-	if (m_pDepthRGBX && m_pDepthInColorSpace)
-	{
-		pCapture->MapDepthFrameToColorSpace(m_pDepthInColorSpace);
-
-		for (int i = 0; i < pCapture->nColorFrameWidth * pCapture->nColorFrameHeight; i++)
-		{
-			USHORT depth = m_pDepthInColorSpace[i];
-			BYTE intensity = static_cast<BYTE>(depth % 256);
-
-			m_pDepthRGBX[i].rgbRed = intensity;
-			m_pDepthRGBX[i].rgbGreen = intensity;
-			m_pDepthRGBX[i].rgbBlue = intensity;
-		}
-
-		// Draw the data with Direct2D
-		m_pDrawColor->Draw(reinterpret_cast<BYTE*>(m_pDepthRGBX), pCapture->nColorFrameWidth * pCapture->nColorFrameHeight * sizeof(RGB), pCapture->vBodies);
-	}
-}
-
-void LiveScanClient::ShowColor()
-{
-    // Make sure we've received valid data
-	if (pCapture->pColorRGBX)
-    {
-        // Draw the data with Direct2D
-		m_pDrawColor->Draw(reinterpret_cast<BYTE*>(pCapture->pColorRGBX), pCapture->nColorFrameWidth * pCapture->nColorFrameHeight * sizeof(RGB), pCapture->vBodies);
-    }
-}
-
-bool LiveScanClient::SetStatusMessage(_In_z_ WCHAR* szMessage, DWORD nShowTimeMsec, bool bForce)
-{
-    INT64 now = GetTickCount64();
-
-    if (m_hWnd && (bForce || (m_nNextStatusTime <= now)))
-    {
-        SetDlgItemText(m_hWnd, IDC_STATUS, szMessage);
-        m_nNextStatusTime = now + nShowTimeMsec;
-
-        return true;
-    }
-
-    return false;
 }
 
 void LiveScanClient::SocketThreadFunction()
@@ -517,7 +293,9 @@ void LiveScanClient::HandleSocket()
 			m_bCaptureFrame = true;
 		//calibrate
 		else if (received[i] == MSG_CALIBRATE)
+		{
 			m_bCalibrate = true;
+		}
 		
 		//Enables Temporal sync on this client
 		else if (received[i] == MSG_SET_TEMPSYNC_ON) {
@@ -541,13 +319,13 @@ void LiveScanClient::HandleSocket()
 
 				res = pCapture->Close();
 				if (!res) {
-					SetStatusMessage(L"Subordinate device failed to close! Restart Application!", 10000, true);
+					Log("Subordinate device failed to close! Restart Application!");
 					return;
 				}
 
 				res = pCapture->Initialize(Subordinate, syncOffset);
 				if (!res) {
-					SetStatusMessage(L"Subordinate device failed to reinitialize! Restart Application!", 10000, true);
+					Log("Subordinate device failed to reinitialize! Restart Application!");
 					return;
 				}
 				//Confirm to the server, that we set this device as subordinate
@@ -563,7 +341,7 @@ void LiveScanClient::HandleSocket()
 
 				res = pCapture->Close();
 				if (!res) {
-					SetStatusMessage(L"Master device failed to close! Restart Application!", 10000, true);
+					Log("Master device failed to close! Restart Application!");
 					return;
 				}
 
@@ -578,14 +356,14 @@ void LiveScanClient::HandleSocket()
 
 				res = pCapture->Close();
 				if (!res) {
-					SetStatusMessage(L"Capture device failed to close! Restart Application!", 10000, true);
+					Log("Capture device failed to close! Restart Application!");
 					return;
 				}
 
 				res = pCapture->Initialize(Standalone, 0);
 
 				if (!res) {
-					SetStatusMessage(L"Capture device failed to reinitialize! Restart Application!", 10000, true);
+					Log("Capture device failed to reinitialize! Restart Application!");
 					return;
 				}
 
@@ -606,14 +384,14 @@ void LiveScanClient::HandleSocket()
 
 			res = pCapture->Close();
 			if (!res) {
-				SetStatusMessage(L"Capture device failed to close! Restart Application!", 10000, true);
+				Log("Capture device failed to close! Restart Application!");
 				return;
 			}
 
 			res = pCapture->Initialize(Standalone, 0);
 
 			if (!res) {
-				SetStatusMessage(L"Capture device failed to reinitialize! Restart Application!", 10000, true);
+				Log("Capture device failed to reinitialize! Restart Application!");
 				return;
 			}
 
@@ -627,7 +405,7 @@ void LiveScanClient::HandleSocket()
 			{
 				bool res = pCapture->Initialize(Master, 0);
 				if (!res) {
-					SetStatusMessage(L"Master device failed to reinitialize! Restart Application!", 10000, true);
+					Log("Master device failed to reinitialize! Restart Application!");
 					return;
 				}
 
@@ -1022,55 +800,11 @@ void LiveScanClient::ProcessFrame(Point3f *vertices, RGB *colorInDepth, vector<B
 	m_vLastFrameRGB = goodColorPoints;
 }
 
-void LiveScanClient::ShowFPS()
+void LiveScanClient::RequestExit()
 {
-	if (m_hWnd)
-	{
-		double fps = 0.0;
+	m_bExitRequested = true;
 
-		LARGE_INTEGER qpcNow = { 0 };
-		if (m_fFreq)
-		{
-			if (QueryPerformanceCounter(&qpcNow))
-			{
-				if (m_nLastCounter)
-				{
-					m_nFramesSinceUpdate++;
-					fps = m_fFreq * m_nFramesSinceUpdate / double(qpcNow.QuadPart - m_nLastCounter);
-				}
-			}
-		}
-
-		WCHAR szStatusMessage[64];
-		StringCchPrintf(szStatusMessage, _countof(szStatusMessage), L" FPS = %0.2f", fps);
-
-		if (SetStatusMessage(szStatusMessage, 1000, false))
-		{
-			m_nLastCounter = qpcNow.QuadPart;
-			m_nFramesSinceUpdate = 0;
-		}
-	}
+	// Optionally send WM_QUIT to the message loop
+	PostThreadMessage(GetCurrentThreadId(), WM_QUIT, 0, 0);
 }
 
-void LiveScanClient::ReadIPFromFile()
-{
-	ifstream file;
-	file.open("lastIP.txt");
-	if (file.is_open())
-	{
-		char lastUsedIPAddress[20];
-		file.getline(lastUsedIPAddress, 20);
-		file.close();
-		SetDlgItemTextA(m_hWnd, IDC_IP, lastUsedIPAddress);
-	}
-}
-
-void LiveScanClient::WriteIPToFile()
-{
-	ofstream file;
-	file.open("lastIP.txt");
-	char lastUsedIPAddress[20];
-	GetDlgItemTextA(m_hWnd, IDC_IP, lastUsedIPAddress, 20);
-	file << lastUsedIPAddress;
-	file.close();
-}
