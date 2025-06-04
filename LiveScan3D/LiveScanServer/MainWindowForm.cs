@@ -105,7 +105,7 @@ namespace KinectServer
             // Start multiple instances of LiveScanClient.exe in headless and autoconnect mode
             for (int i = 0; i < count; i++)
             {
-                var client = new NativeLiveScanClient(i, "127.0.0.1", true);
+                var client = new NativeLiveScanClient(i, "127.0.0.1");
                 client.Start();
                 liveScanClients.Add(client);
             }

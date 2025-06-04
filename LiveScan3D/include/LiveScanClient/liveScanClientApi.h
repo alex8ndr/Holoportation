@@ -10,7 +10,7 @@ extern "C" {
 
 	typedef void* LiveScanClientHandle;
 
-	LIVESCAN_API LiveScanClientHandle CreateClient(int index, const char* serverIP, bool headless);
+	LIVESCAN_API LiveScanClientHandle CreateClient(int index, const char* serverIP);
 	LIVESCAN_API void StartClient(LiveScanClientHandle handle);
 	LIVESCAN_API void StopClient(LiveScanClientHandle handle);
 	LIVESCAN_API void DestroyClient(LiveScanClientHandle handle);

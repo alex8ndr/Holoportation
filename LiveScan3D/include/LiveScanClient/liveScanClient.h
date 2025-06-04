@@ -25,7 +25,7 @@ public:
     LiveScanClient(int index);
     ~LiveScanClient();
 
-    void Run(HINSTANCE hInstance, int nCmdShow, bool headless = false, bool autoconnect = false, std::wstring serverAddress = L"");
+    void Run(std::wstring serverAddress = L"");
     void RequestExit();
     std::function<void(const std::string&)> GetLogger();
 
@@ -42,8 +42,6 @@ private:
     bool m_bFilter;
     bool m_bStreamOnlyBodies;
 
-    bool m_bIsMaster;
-    bool m_bIsSubOrdinate;
     bool m_bRestartingCamera;
 
     ICapture* pCapture;
@@ -55,10 +53,8 @@ private:
     bool m_bConnected;
     bool m_bConfirmCaptured;
     bool m_bConfirmTempSyncState;
-    bool m_bConfirmSubOrdinateStarted;
     bool m_bConfirmRestartAsMaster;
     bool m_bConfirmCalibrated;
-    bool m_bShowDepth;
     bool m_bFrameCompression;
     int m_iCompressionLevel;
     bool m_bAutoExposureEnabled;
@@ -78,21 +74,7 @@ private:
     std::vector<RGB> m_vLastFrameRGB;
     std::vector<Body> m_vLastFrameBody;
 
-    HWND m_hWnd;
-    INT64 m_nLastCounter;
-    double m_fFreq;
-    INT64 m_nNextStatusTime;
-    DWORD m_nFramesSinceUpdate;
-    int frameRecordCounter;
-
     Point3f* m_pCameraSpaceCoordinates;
-    RGB* m_pColorInColorSpace;
-    UINT16* m_pDepthInColorSpace;
-
-    // Direct2D
-    ImageRenderer* m_pDrawColor;
-    ID2D1Factory* m_pD2DFactory;
-    RGB* m_pDepthRGBX;
 
     void UpdateFrame();
 

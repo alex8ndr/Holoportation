@@ -67,17 +67,7 @@ void LiveScanClient::Log(const std::string& message)
 
 LiveScanClient::LiveScanClient(int index) :
 	m_index(index),
-	m_hWnd(NULL),
-	m_nLastCounter(0),
-	m_nFramesSinceUpdate(0),
-	m_fFreq(0),
-	m_nNextStatusTime(0LL),
-	m_pD2DFactory(NULL),
-	m_pDrawColor(NULL),
-	m_pDepthRGBX(NULL),
 	m_pCameraSpaceCoordinates(NULL),
-	m_pColorInColorSpace(NULL),
-	m_pDepthInColorSpace(NULL),
 	m_bCalibrate(false),
 	m_bFilter(false),
 	m_bStreamOnlyBodies(false),
@@ -86,7 +76,6 @@ LiveScanClient::LiveScanClient(int index) :
 	m_bConfirmCaptured(false),
 	m_bConfirmCalibrated(false),
 	m_bConfirmRestartAsMaster(false),
-	m_bShowDepth(false),
 	m_bSocketThread(true),
 	m_bFrameCompression(true),
 	m_iCompressionLevel(2),
@@ -100,13 +89,6 @@ LiveScanClient::LiveScanClient(int index) :
 	pCapture = new AzureKinectCapture(index);
 	pCapture->SetLogger(GetLogger());
 
-
-    LARGE_INTEGER qpf = {0};
-    if (QueryPerformanceFrequency(&qpf))
-    {
-        m_fFreq = double(qpf.QuadPart);
-    }
-
 	m_vBounds.push_back(-0.5);
 	m_vBounds.push_back(-0.5);
 	m_vBounds.push_back(-0.5);
@@ -117,23 +99,10 @@ LiveScanClient::LiveScanClient(int index) :
 
 LiveScanClient::~LiveScanClient()
 {
-    // clean up Direct2D renderer
-    if (m_pDrawColor)
-    {
-        delete m_pDrawColor;
-        m_pDrawColor = NULL;
-    }
-
 	if (pCapture)
 	{
 		delete pCapture;
 		pCapture = NULL;
-	}
-
-	if (m_pDepthRGBX)
-	{
-		delete[] m_pDepthRGBX;
-		m_pDepthRGBX = NULL;
 	}
 
 	if (m_pCameraSpaceCoordinates)
@@ -142,36 +111,17 @@ LiveScanClient::~LiveScanClient()
 		m_pCameraSpaceCoordinates = NULL;
 	}
 
-	if (m_pColorInColorSpace)
-	{
-		delete[] m_pColorInColorSpace;
-		m_pColorInColorSpace = NULL;
-	}
-
-	if (m_pDepthInColorSpace)
-	{
-		delete[] m_pDepthInColorSpace;
-		m_pDepthInColorSpace = NULL;
-	}
-
 	if (m_pClientSocket)
 	{
 		delete m_pClientSocket;
 		m_pClientSocket = NULL;
 	}
-    // clean up Direct2D
-    SafeRelease(m_pD2DFactory);
 }
 
-void LiveScanClient::Run(HINSTANCE hInstance, int nCmdShow, bool headless, bool autoconnect, std::wstring serverAddress)
+void LiveScanClient::Run(std::wstring serverAddress)
 {
 	SetupLogging(m_index);
 
-	if (!hInstance) {
-		hInstance = GetModuleHandle(NULL); // For DLL usage
-	}
-
-	if (autoconnect)
 	{
 		std::lock_guard<std::mutex> lock(m_mSocketThreadMutex);
 		while (!m_bConnected)
@@ -191,22 +141,16 @@ void LiveScanClient::Run(HINSTANCE hInstance, int nCmdShow, bool headless, bool 
 		}
 	}
 
-	if (headless)
+	bool res = pCapture->Initialize(Standalone, 0);
+	if (res)
 	{
-		bool res = pCapture->Initialize(Standalone, 0);
-		if (res)
-		{
-			calibration.LoadCalibration(pCapture->serialNumber);
-			m_pDepthRGBX = new RGB[pCapture->nColorFrameWidth * pCapture->nColorFrameHeight];
-			m_pDepthInColorSpace = new UINT16[pCapture->nColorFrameWidth * pCapture->nColorFrameHeight];
-			m_pCameraSpaceCoordinates = new Point3f[pCapture->nColorFrameWidth * pCapture->nColorFrameHeight];
-			m_pColorInColorSpace = new RGB[pCapture->nColorFrameWidth * pCapture->nColorFrameHeight];
-			pCapture->SetExposureState(true, 0);
-		}
-		else
-		{
-			std::cerr << "[LiveScanClient] Failed to initialize capture device." << std::endl;
-		}
+		calibration.LoadCalibration(pCapture->serialNumber);
+		m_pCameraSpaceCoordinates = new Point3f[pCapture->nColorFrameWidth * pCapture->nColorFrameHeight];
+		pCapture->SetExposureState(true, 0);
+	}
+	else
+	{
+		std::cerr << "[LiveScanClient] Failed to initialize capture device." << std::endl;
 	}
 
 	std::thread t1(&LiveScanClient::SocketThreadFunction, this);

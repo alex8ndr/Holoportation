@@ -12,7 +12,7 @@ namespace KinectServer
     public class NativeLiveScanClient
     {
         [DllImport("LiveScanClient.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr CreateClient(int index, string ip, bool headless);
+        private static extern IntPtr CreateClient(int index, string ip);
 
         [DllImport("LiveScanClient.dll", CallingConvention = CallingConvention.Cdecl)]
         private static extern void StartClient(IntPtr handle);
@@ -25,9 +25,9 @@ namespace KinectServer
 
         private IntPtr clientHandle;
 
-        public NativeLiveScanClient(int index, string ip, bool headless)
+        public NativeLiveScanClient(int index, string ip)
         {
-            clientHandle = CreateClient(index, ip, headless);
+            clientHandle = CreateClient(index, ip);
         }
 
         public void Start() => StartClient(clientHandle);

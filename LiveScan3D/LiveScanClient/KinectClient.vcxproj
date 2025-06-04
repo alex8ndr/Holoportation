@@ -44,6 +44,7 @@
     <ClCompile Include="..\src\LiveScanClient\imageRenderer.cpp" />
     <ClCompile Include="..\src\LiveScanClient\iMarker.cpp" />
     <ClCompile Include="..\src\LiveScanClient\liveScanClient.cpp" />
+    <ClCompile Include="..\src\LiveScanClient\liveScanClientApi.cpp" />
     <ClCompile Include="..\src\LiveScanClient\marker.cpp" />
     <ClCompile Include="..\src\LiveScanClient\utils.cpp" />
     <ClCompile Include="..\src\socketCS.cpp" />
