@@ -45,6 +45,7 @@ namespace KinectServer
         object oFrameRequestLock = new object();
 
         List<KinectSocket> lClientSockets = new List<KinectSocket>();
+        List<NativeLiveScanClient> liveScanClients = new List<NativeLiveScanClient>();
 
         public event SocketListChangedHandler eSocketListChanged;
 
@@ -182,6 +183,18 @@ namespace KinectServer
             }
         }
 
+        public void LaunchClients(uint count)
+        {
+            // Start multiple instances of LiveScanClient
+            for (int i = 0; i < count; i++)
+            {
+                var client = new NativeLiveScanClient(i, "127.0.0.1");
+                client.Start();
+                liveScanClients.Add(client);
+                client.SetSettings(oSettings);
+            }
+        }
+
         public void StopServer()
         {
             if (bServerRunning)
@@ -191,6 +204,12 @@ namespace KinectServer
                 oServerSocket.Close();
                 lock (oClientSocketLock)
                     lClientSockets.Clear();
+
+                // Ensure all LiveScanClients are terminated
+                foreach (var client in liveScanClients)
+                {
+                    client.Stop();
+                }
             }
         }
 
@@ -198,8 +217,10 @@ namespace KinectServer
         {
             lock (oClientSocketLock)
             {
-                for (int i = 0; i < lClientSockets.Count; i++)
-                    lClientSockets[i].CaptureFrame();
+                foreach (var client in liveScanClients)
+                {
+                    client.StartFrameCapture();
+                }
             }
 
             //Wait till frames captured
@@ -226,9 +247,9 @@ namespace KinectServer
         {
             lock (oClientSocketLock)
             {
-                for (int i = 0; i < lClientSockets.Count; i++)
+                foreach (var client in liveScanClients)
                 {
-                    lClientSockets[i].Calibrate();
+                    client.Calibrate();
                 }
             }
         }
@@ -237,9 +258,9 @@ namespace KinectServer
         {
             lock (oClientSocketLock)
             {
-                for (int i = 0; i < lClientSockets.Count; i++)
+                foreach (var client in liveScanClients)
                 {
-                    lClientSockets[i].SendSettings(oSettings);
+                    client.SetSettings(oSettings);
                 }
             }
         }
@@ -248,10 +269,9 @@ namespace KinectServer
         {
             lock (oClientSocketLock)
             {
-
                 for (int i = 0; i < lClientSockets.Count; i++)
                 {
-                    lClientSockets[i].SendCalibrationData();
+                    liveScanClients[i].ReceiveCalibration(lClientSockets[i].oWorldTransform);
                 }
             }
         }
@@ -263,9 +283,9 @@ namespace KinectServer
         {
             lock (oClientSocketLock)
             {
-                for (int i = 0; i < lClientSockets.Count; i++)
+                foreach (var client in liveScanClients)
                 {
-                    lClientSockets[i].RequestTempSyncState();
+                    client.RequestSyncJackState();
                 }
             }
         }
@@ -324,7 +344,11 @@ namespace KinectServer
                     }
 
                     lClientSockets[i].SendTemporalSyncStatus(true, syncOffSetCounter);
+                }
 
+                foreach (var client in liveScanClients)
+                {
+                    client.EnableTemporalSync(syncOffSetCounter);
                 }
 
                 bWaitForSubToStart = true;
@@ -344,6 +368,11 @@ namespace KinectServer
                 for (int i = 0; i < lClientSockets.Count; i++)
                 {
                     lClientSockets[i].SendTemporalSyncStatus(false, 0);
+                }
+
+                foreach (var client in liveScanClients)
+                {
+                    client.DisableTemporalSync();
                 }
             }
         }
@@ -399,7 +428,7 @@ namespace KinectServer
                     {
                         if(lClientSockets[i].currentDeviceTempSyncState == KinectSocket.eTempSyncConfig.MASTER)
                         {
-                            lClientSockets[i].SendMasterInitialize();
+                            liveScanClients[i].StartMaster();
                             return;
                         }
                     }
@@ -431,8 +460,14 @@ namespace KinectServer
                 //Request frames
                 lock (oClientSocketLock)
                 {
+                    // Temporarily keeping this call to set some variables (removed actual network send)
                     for (int i = 0; i < lClientSockets.Count; i++)
                         lClientSockets[i].RequestStoredFrame();
+
+                    foreach (var client in liveScanClients)
+                    {
+                        client.RequestStoredFrame();
+                    }
                 }
 
                 //Wait till frames received
@@ -485,8 +520,14 @@ namespace KinectServer
                 //Request frames
                 lock (oClientSocketLock)
                 {
+                    // Temporarily keeping this call to set some variables (removed actual network send)
                     for (int i = 0; i < lClientSockets.Count; i++)
                         lClientSockets[i].RequestLastFrame();
+
+                    foreach (var client in liveScanClients)
+                    {
+                        client.RequestLastFrame();
+                    }
                 }
 
                 //Wait till frames received
@@ -528,9 +569,9 @@ namespace KinectServer
         {
             lock (oClientSocketLock)
             {
-                for (int i = 0; i < lClientSockets.Count; i++)
+                foreach (var client in liveScanClients)
                 {
-                    lClientSockets[i].ClearStoredFrames();
+                    client.ClearStoredFrames();
                 }
             }
         }
@@ -549,7 +590,7 @@ namespace KinectServer
                         lock (oClientSocketLock)
                         {
                             lClientSockets.Add(new KinectSocket(newClient));
-                            lClientSockets[lClientSockets.Count - 1].SendSettings(oSettings);
+                            //lClientSockets[lClientSockets.Count - 1].SendSettings(oSettings);
                             lClientSockets[lClientSockets.Count - 1].eChanged += new SocketChangedHandler(SocketListChanged);
                             lClientSockets[lClientSockets.Count - 1].eSubInitialized += new SubOrdinateInitialized(CheckForMasterStart);
                             lClientSockets[lClientSockets.Count - 1].eMasterRestart += new MasterRestarted(MasterSuccessfullyRestarted);

@@ -52,6 +52,26 @@ namespace KinectServer
                 t[i] = 0;
             }
         }
+
+        public unsafe NativeAffineTransform ToNative()
+        {
+            NativeAffineTransform native = new NativeAffineTransform();
+
+            for (int i = 0; i < 3; i++)
+            {
+                for (int j = 0; j < 3; j++)
+                {
+                    native.R[i * 3 + j] = this.R[i, j];
+                }
+            }
+
+            for (int i = 0; i < 3; i++)
+            {
+                native.t[i] = this.t[i];
+            }
+
+            return native;
+        }
     }
 
     [Serializable]

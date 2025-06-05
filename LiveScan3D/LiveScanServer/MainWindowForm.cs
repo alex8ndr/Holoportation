@@ -70,8 +70,6 @@ namespace KinectServer
         //The live view window class
         OpenGLWindow oOpenGLWindow;
 
-        List<NativeLiveScanClient> liveScanClients = new List<NativeLiveScanClient>();
-
         public MainWindowForm()
         {
             //This tries to read the settings from "settings.bin", if it fails the settings stay at default values.
@@ -102,13 +100,7 @@ namespace KinectServer
 
             uint count = k4a_device_get_installed_count();
 
-            // Start multiple instances of LiveScanClient.exe in headless and autoconnect mode
-            for (int i = 0; i < count; i++)
-            {
-                var client = new NativeLiveScanClient(i, "127.0.0.1");
-                client.Start();
-                liveScanClients.Add(client);
-            }
+            oServer.LaunchClients(count);
         }
 
         private void Form1_FormClosing(object sender, FormClosingEventArgs e)
@@ -122,12 +114,6 @@ namespace KinectServer
 
             oServer.StopServer();
             oTransferServer.StopServer();
-
-            // Ensure all LiveScanClients are terminated
-            foreach (var client in liveScanClients)
-            {
-                client.Stop();
-            }
         }
 
         //Starts the server

@@ -16,6 +16,7 @@
 #include "resource.h"
 #include "LiveScanClient.h"
 #include "filter.h"
+#include "objectUtils.h"
 #include <chrono>
 #include <strsafe.h>
 #include <fstream>
@@ -84,7 +85,7 @@ LiveScanClient::LiveScanClient(int index) :
 	m_fFilterThreshold(0.01f),
 	m_bRestartingCamera(false),
 	m_bAutoExposureEnabled(true), // Which state the Auto Exposure should be set to
-	m_nExposureStep(-5)
+	m_nExposureSteps(-5)
 {
 	pCapture = new AzureKinectCapture(index);
 	pCapture->SetLogger(GetLogger());
@@ -194,7 +195,7 @@ void LiveScanClient::UpdateFrame()
 	if (m_bCalibrate)
 	{
 		std::lock_guard<std::mutex> lock(m_mSocketThreadMutex);
-		Point3f *pCameraCoordinates = new Point3f[pCapture->nColorFrameWidth * pCapture->nColorFrameHeight];
+		Point3f* pCameraCoordinates = new Point3f[pCapture->nColorFrameWidth * pCapture->nColorFrameHeight];
 		pCapture->MapColorFrameToCameraSpace(pCameraCoordinates);
 
 		bool res = calibration.Calibrate(pCapture->pColorRGBX, pCameraCoordinates, pCapture->nColorFrameWidth, pCapture->nColorFrameHeight);
@@ -208,6 +209,210 @@ void LiveScanClient::UpdateFrame()
 			m_bCalibrate = false;
 		}
 	}
+}
+
+void LiveScanClient::StartFrameCapture()
+{
+	m_bCaptureFrame = true;
+}
+
+void LiveScanClient::Calibrate()
+{
+	m_bCalibrate = true;
+}
+
+void LiveScanClient::SetSettings(const KinectSettings& settings)
+{
+	m_vBounds = { settings.minBounds[0], settings.minBounds[1], settings.minBounds[2],
+				  settings.maxBounds[0], settings.maxBounds[1], settings.maxBounds[2] };
+
+	m_bFilter = settings.filter;
+	m_nFilterNeighbors = settings.filterNeighbors;
+	m_fFilterThreshold = settings.filterThreshold;
+
+	calibration.markerPoses.resize(settings.numMarkers);
+	for (int i = 0; i < settings.numMarkers; i++) {
+		calibration.markerPoses[i].markerId = settings.markerPoses[i].markerId;
+		memcpy(calibration.markerPoses[i].R, settings.markerPoses[i].R, sizeof(float) * 9);
+		memcpy(calibration.markerPoses[i].t, settings.markerPoses[i].t, sizeof(float) * 3);
+	}
+
+	m_bStreamOnlyBodies = settings.streamOnlyBodies;
+	m_iCompressionLevel = settings.compressionLevel;
+	m_bFrameCompression = (settings.compressionLevel > 0);
+
+	m_bAutoExposureEnabled = settings.autoExposureEnabled;
+	m_nExposureSteps = settings.exposureStep;
+
+	pCapture->SetExposureState(m_bAutoExposureEnabled, m_nExposureSteps);
+}
+
+void LiveScanClient::RequestStoredFrame()
+{
+	char byteToSend = MSG_STORED_FRAME;
+	m_pClientSocket->SendBytes(&byteToSend, 1);
+
+	vector<Point3s> points;
+	vector<RGB> colors;
+	bool res = m_framesFileWriterReader.readFrame(points, colors);
+	if (res == false)
+	{
+		int size = -1;
+		m_pClientSocket->SendBytes((char*)&size, 4);
+	}
+	else
+		SendFrame(points, colors, m_vLastFrameBody);
+}
+
+void LiveScanClient::RequestLastFrame()
+{
+	char byteToSend = MSG_LAST_FRAME;
+	m_pClientSocket->SendBytes(&byteToSend, 1);
+
+	SendFrame(m_vLastFrameVertices, m_vLastFrameRGB, m_vLastFrameBody);
+}
+
+void LiveScanClient::ReceiveCalibration(const AffineTransform& transform)
+{
+	for (int i = 0; i < 3; i++)
+	{
+		for (int j = 0; j < 3; j++)
+			calibration.worldR[i][j] = transform.R[i][j];
+
+		calibration.worldT[i] = transform.t[i];
+	}
+}
+
+void LiveScanClient::ClearStoredFrames()
+{
+	m_framesFileWriterReader.closeFileIfOpened();
+}
+
+void LiveScanClient::EnableTemporalSync(int syncOffset)
+{
+	//Determine if this device is a subordinate, master, or standalone
+	int jackState = pCapture->GetSyncJackState();
+
+	bool res = false;
+
+	switch (jackState)
+	{
+	case -1:
+		currentTempSyncState = SUBORDINATE;
+
+		//Restart this device as Subordinate, with a unique syncOffset (send by the server)
+		m_bRestartingCamera = true;
+
+
+		res = pCapture->Close();
+		if (!res) {
+			Log("Subordinate device failed to close! Restart Application!");
+			return;
+		}
+
+		res = pCapture->Initialize(Subordinate, syncOffset);
+		if (!res) {
+			Log("Subordinate device failed to reinitialize! Restart Application!");
+			return;
+		}
+		//Confirm to the server, that we set this device as subordinate
+		m_bConfirmTempSyncState = true;
+		m_bRestartingCamera = false;
+		break;
+
+	case 0:
+		currentTempSyncState = MASTER;
+
+		//Only Close this device, as it needs to wait for all subordinates to start, before starting itself
+		m_bRestartingCamera = true;
+
+		res = pCapture->Close();
+		if (!res) {
+			Log("Master device failed to close! Restart Application!");
+			return;
+		}
+
+		m_bConfirmTempSyncState = true;
+		break;
+
+	case 1://Device is Standalone
+		currentTempSyncState = STANDALONE;
+
+		//Restart this device as Standalone
+		m_bRestartingCamera = true;
+
+		res = pCapture->Close();
+		if (!res) {
+			Log("Capture device failed to close! Restart Application!");
+			return;
+		}
+
+		res = pCapture->Initialize(Standalone, 0);
+
+		if (!res) {
+			Log("Capture device failed to reinitialize! Restart Application!");
+			return;
+		}
+
+		m_bConfirmTempSyncState = true;
+		m_bRestartingCamera = false;
+		break;
+	default:
+		break;
+	}
+}
+
+void LiveScanClient::DisableTemporalSync()
+{
+	//Sets this device as Standalone
+	currentTempSyncState = STANDALONE;
+	m_bRestartingCamera = true;
+
+	bool res;
+
+	res = pCapture->Close();
+	if (!res) {
+		Log("Capture device failed to close! Restart Application!");
+		return;
+	}
+
+	res = pCapture->Initialize(Standalone, 0);
+
+	if (!res) {
+		Log("Capture device failed to reinitialize! Restart Application!");
+		return;
+	}
+
+	m_bConfirmTempSyncState = true;
+	m_bRestartingCamera = false;
+}
+
+void LiveScanClient::StartMaster()
+{
+	//Got confirmation from the server that all subs have started, and we can now start the master 
+	if (currentTempSyncState == MASTER)
+	{
+		bool res = pCapture->Initialize(Master, 0);
+		if (!res) {
+			Log("Master device failed to reinitialize! Restart Application!");
+			return;
+		}
+
+		m_bConfirmRestartAsMaster = true;
+		m_bRestartingCamera = false;
+	}
+}
+
+void LiveScanClient::RequestSyncJackState()
+{
+	int size = 3;
+	char* buffer = new char[size];
+	buffer[0] = MSG_SYNC_JACK_STATE;
+
+	buffer[1] = pCapture->GetSyncJackState() + 1; // Gets the current Sync Jack State and adds + 1, as we can't send a negative value
+
+	m_pClientSocket->SendBytes(buffer, size);
+	m_bConfirmTempSyncState = false;
 }
 
 void LiveScanClient::SocketThreadFunction()
@@ -235,11 +440,10 @@ void LiveScanClient::HandleSocket()
 		//capture a frame
 		if (received[i] == MSG_CAPTURE_FRAME)
 			m_bCaptureFrame = true;
+			
 		//calibrate
 		else if (received[i] == MSG_CALIBRATE)
-		{
 			m_bCalibrate = true;
-		}
 		
 		//Enables Temporal sync on this client
 		else if (received[i] == MSG_SET_TEMPSYNC_ON) {
@@ -423,10 +627,10 @@ void LiveScanClient::HandleSocket()
 			m_bAutoExposureEnabled = (received[i] != 0);
 			i++;
 
-			m_nExposureStep = *(int*)(received.c_str() + i);
+			m_nExposureSteps = *(int*)(received.c_str() + i);
 			i += sizeof(int);
 
-			pCapture->SetExposureState(m_bAutoExposureEnabled, m_nExposureStep);
+			pCapture->SetExposureState(m_bAutoExposureEnabled, m_nExposureSteps);
 
 			//so that we do not lose the next character in the stream
 			i--;

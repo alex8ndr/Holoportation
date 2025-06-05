@@ -15,6 +15,7 @@
 #include "calibration.h"
 #include "azureKinectCapture.h"
 #include "frameFileWriterReader.h"
+#include "objectUtils.h"
 #include <thread>
 #include <mutex>
 #include <functional>
@@ -26,6 +27,17 @@ public:
     ~LiveScanClient();
 
     void Run(std::wstring serverAddress = L"");
+    void StartFrameCapture();
+    void Calibrate();
+    void SetSettings(const KinectSettings& settings);
+    void RequestStoredFrame();
+    void RequestLastFrame();
+    void ReceiveCalibration(const AffineTransform& transform);
+    void ClearStoredFrames();
+    void EnableTemporalSync(int syncOffset);
+    void DisableTemporalSync();
+    void StartMaster();
+    void RequestSyncJackState();
     void RequestExit();
     std::function<void(const std::string&)> GetLogger();
 
@@ -38,7 +50,7 @@ private:
 
     Calibration calibration;
 
-    bool m_bCalibrate;
+    atomic<bool> m_bCalibrate;
     bool m_bFilter;
     bool m_bStreamOnlyBodies;
 
@@ -49,7 +61,7 @@ private:
     int m_nFilterNeighbors;
     float m_fFilterThreshold;
 
-    bool m_bCaptureFrame;
+    atomic<bool> m_bCaptureFrame;
     bool m_bConnected;
     bool m_bConfirmCaptured;
     bool m_bConfirmTempSyncState;
@@ -58,7 +70,7 @@ private:
     bool m_bFrameCompression;
     int m_iCompressionLevel;
     bool m_bAutoExposureEnabled;
-    int m_nExposureStep;
+    int m_nExposureSteps;
 
     volatile bool m_bExitRequested = false;
 

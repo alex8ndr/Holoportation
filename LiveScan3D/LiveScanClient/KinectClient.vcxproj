@@ -26,6 +26,7 @@
     <ClInclude Include="..\include\LiveScanClient\iCapture.h" />
     <ClInclude Include="..\include\LiveScanClient\imageRenderer.h" />
     <ClInclude Include="..\include\LiveScanClient\iMarker.h" />
+    <ClInclude Include="..\include\LiveScanClient\objectUtils.h" />
     <ClInclude Include="..\include\LiveScanClient\liveScanClient.h" />
     <ClInclude Include="..\include\LiveScanClient\liveScanClientApi.h" />
     <ClInclude Include="..\include\LiveScanClient\marker.h" />
