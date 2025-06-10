@@ -26,7 +26,10 @@
     <ClInclude Include="..\include\LiveScanClient\iCapture.h" />
     <ClInclude Include="..\include\LiveScanClient\imageRenderer.h" />
     <ClInclude Include="..\include\LiveScanClient\iMarker.h" />
+    <ClInclude Include="..\include\LiveScanClient\liveScanClientWrapper.h" />
+    <ClInclude Include="..\include\LiveScanClient\objectUtils.h" />
     <ClInclude Include="..\include\LiveScanClient\liveScanClient.h" />
+    <ClInclude Include="..\include\LiveScanClient\liveScanClientApi.h" />
     <ClInclude Include="..\include\LiveScanClient\marker.h" />
     <ClInclude Include="..\include\LiveScanClient\utils.h" />
     <ClInclude Include="..\include\nanoflann.h" />
@@ -43,6 +46,9 @@
     <ClCompile Include="..\src\LiveScanClient\imageRenderer.cpp" />
     <ClCompile Include="..\src\LiveScanClient\iMarker.cpp" />
     <ClCompile Include="..\src\LiveScanClient\liveScanClient.cpp" />
+    <ClCompile Include="..\src\LiveScanClient\liveScanClientApi.cpp">
+      <PreprocessToFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</PreprocessToFile>
+    </ClCompile>
     <ClCompile Include="..\src\LiveScanClient\marker.cpp" />
     <ClCompile Include="..\src\LiveScanClient\utils.cpp" />
     <ClCompile Include="..\src\socketCS.cpp" />
@@ -70,7 +76,7 @@
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
@@ -83,7 +89,7 @@
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
@@ -142,13 +148,14 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>$(KINECTSDK20_DIR)\inc;$(SolutionDir)\include\LiveScanClient;$(SolutionDir)\include;$(ProjectDir)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_UNICODE;UNICODE;LIVESCANCLIENT_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(KINECTSDK20_DIR)\lib\x64;$(SolutionDir)lib</AdditionalLibraryDirectories>
       <AdditionalDependencies>opencv_world320d.lib;libzstd.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SubSystem>NotSet</SubSystem>
+      <ModuleDefinitionFile>LiveScanClient.def</ModuleDefinitionFile>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -179,7 +186,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>$(KINECTSDK20_DIR)\inc;$(SolutionDir)\include\LiveScanClient;$(SolutionDir)\include;$(ProjectDir)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_UNICODE;UNICODE;_WINSOCK_DEPRACATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_UNICODE;UNICODE;_WINSOCK_DEPRACATED_NO_WARNINGS;_WINDOWS;WIN32%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <OpenMPSupport>true</OpenMPSupport>
       <EnableEnhancedInstructionSet>StreamingSIMDExtensions2</EnableEnhancedInstructionSet>
     </ClCompile>
@@ -201,22 +208,14 @@
     </PropertyGroup>
     <Error Condition="!Exists('..\packages\Microsoft.Azure.Kinect.Sensor.1.4.1\build\native\Microsoft.Azure.Kinect.Sensor.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Microsoft.Azure.Kinect.Sensor.1.4.1\build\native\Microsoft.Azure.Kinect.Sensor.targets'))" />
   </Target>
-  
   <!-- Custom target to swap Azure Kinect DLLs with Orbbec wrapper DLLs -->
   <Target Name="SwapDLLs" AfterTargets="CopyFilesToOutputDirectory">
     <!-- Delete original NuGet DLLs -->
     <Delete Files="$(OutDir)k4a.dll;$(OutDir)k4arecord.dll;$(OutDir)depthengine_2_0.dll" />
-    
     <!-- Copy custom DLLs from Orbbec wrapper location -->
-    <Copy SourceFiles="$(SolutionDir)lib\orbbec\k4a.dll" 
-          DestinationFolder="$(OutDir)" />
-    <Copy SourceFiles="$(SolutionDir)lib\orbbec\k4arecord.dll" 
-          DestinationFolder="$(OutDir)" 
-          Condition="Exists('$(SolutionDir)lib\orbbec\k4arecord.dll')" />
-    <Copy SourceFiles="$(SolutionDir)lib\orbbec\depthengine_2_0.dll" 
-          DestinationFolder="$(OutDir)" 
-          Condition="Exists('$(SolutionDir)lib\orbbec\depthengine_2_0.dll')" />
-          
+    <Copy SourceFiles="$(SolutionDir)lib\orbbec\k4a.dll" DestinationFolder="$(OutDir)" />
+    <Copy SourceFiles="$(SolutionDir)lib\orbbec\k4arecord.dll" DestinationFolder="$(OutDir)" Condition="Exists('$(SolutionDir)lib\orbbec\k4arecord.dll')" />
+    <Copy SourceFiles="$(SolutionDir)lib\orbbec\depthengine_2_0.dll" DestinationFolder="$(OutDir)" Condition="Exists('$(SolutionDir)lib\orbbec\depthengine_2_0.dll')" />
     <Message Text="Azure Kinect DLLs successfully replaced with Orbbec wrapper DLLs" Importance="high" />
   </Target>
 </Project>

@@ -51,7 +51,7 @@ namespace KinectServer
         //The pose of the sensor in the scene (used by the OpenGLWindow to show the sensor)
         public AffineTransform oCameraPose = new AffineTransform();
 
-        //The transform that maps the vertices in the sensor coordinate system to the world corrdinate system.
+        //The transform that maps the vertices in the sensor coordinate system to the world coordinate system.
         public AffineTransform oWorldTransform = new AffineTransform();
 
         public string sSocketState;
@@ -106,16 +106,16 @@ namespace KinectServer
 
         public void RequestStoredFrame()
         {
-            byteToSend[0] = 3;
-            SendByte();
+            //byteToSend[0] = 3;
+            //SendByte();
             bNoMoreStoredFrames = false;
             bStoredFrameReceived = false;
         }
 
         public void RequestLastFrame()
         {
-            byteToSend[0] = 4;
-            SendByte();
+            //byteToSend[0] = 4;
+            //SendByte();
             bLatestFrameReceived = false;
         }
 
@@ -153,20 +153,20 @@ namespace KinectServer
             bSubStarted = false;
             currentClientTempSyncState = eTempSyncConfig.UNKNOWN;
 
-            if (tempSyncOn)
-            {
-                byte[] data = new byte[2];
-                data[0] = 7;
-                data[1] = syncOffSetMultiplier;
-                if (SocketConnected())
-                    oSocket.Send(data);
-            }
+            //if (tempSyncOn)
+            //{
+            //    byte[] data = new byte[2];
+            //    data[0] = 7;
+            //    data[1] = syncOffSetMultiplier;
+            //    if (SocketConnected())
+            //        oSocket.Send(data);
+            //}
 
-            else
-            {
-                byteToSend[0] = 8;
-                SendByte();
-            }
+            //else
+            //{
+            //    byteToSend[0] = 8;
+            //    SendByte();
+            //}
         }
 
         /// <summary>

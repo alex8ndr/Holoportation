@@ -10,10 +10,10 @@ namespace KinectServer
         TcpClient oSocket;
 
         // Parameters used to find the scale (precision level of the point cloud)
-        private const short MAX_SCALE = 5000;
-        private const short MIN_SCALE = 300;
-        private const double SCALE_FN_OFFSET = 7522.697578580525;
-        private const double SCALE_FN_FACTOR = 626.6934647055376;
+        private const short MAX_SCALE = 2500;
+        private const short MIN_SCALE = 400;
+        private const double SCALE_FN_OFFSET = 7400;
+        private const double SCALE_FN_FACTOR = 580;
 
         public TransferSocket(TcpClient clientSocket)
         {
@@ -103,7 +103,7 @@ namespace KinectServer
         {
             if (vertexCount <= 0) return MAX_SCALE;
             short scale = (short)Math.Truncate(SCALE_FN_OFFSET - SCALE_FN_FACTOR * Math.Log(vertexCount));
-            return Math.Max(scale, MIN_SCALE); // Never go below MIN_SCALE
+            return Math.Min(MAX_SCALE, Math.Max(scale, MIN_SCALE)); // Clamp between min and max acceptable scales
         }
     }
 }

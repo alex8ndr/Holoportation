@@ -35,8 +35,13 @@
 #ifndef SOCKET_H
 #define SOCKET_H
 
+#define WIN32_LEAN_AND_MEAN
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
+#define _WINSOCKAPI_
 
-#include <WinSock2.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
 
 #include <string>
 

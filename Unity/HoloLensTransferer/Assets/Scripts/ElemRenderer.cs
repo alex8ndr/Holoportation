@@ -11,6 +11,10 @@ public class ElemRenderer : MonoBehaviour
     private Queue<(float scale, Vector3[] points, Color32[] colors)> pointCloudQueue = new();
     private const int maxQueueSize = 5;
 
+    private const float a = 197.0f;
+    private const float b = 0.3f;
+    private const float c = 0.001f;
+
     private Mesh mesh;
     private readonly List<Vector3> vertices = new();
     private readonly List<Color32> colors = new();
@@ -58,7 +62,7 @@ public class ElemRenderer : MonoBehaviour
     void UpdateMesh(float scale, Vector3[] positions, Color32[] colorData)
     {
         float precision = 1.0f / scale;
-        pointCloudMaterial.SetFloat("_PointSize", precision * 1.25f); // Make the points slightly larger than the precision to fill holes in the point cloud
+        pointCloudMaterial.SetFloat("_PointSize", a * Mathf.Pow(precision, 2) + b * precision + c); // Make the points slightly larger than the precision to fill holes in the point cloud
 
         int count = Mathf.Min(positions.Length, colorData.Length);
         if (count == 0) return;

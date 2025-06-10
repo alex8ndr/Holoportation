@@ -23,15 +23,14 @@ using System.Net.Sockets;
 using System.Net;
 using System.ComponentModel;
 using System.Windows.Forms;
+using System.Diagnostics;
+using static KinectServer.NativeLiveScanClient;
 
 namespace KinectServer
 {
-    public delegate void SocketListChangedHandler(List<KinectSocket> list);
+    public delegate void ClientListChangedHandler(List<NativeLiveScanClient> list);
     public class KinectServer
     {
-        Socket oServerSocket;
-
-        bool bServerRunning = false;
         bool bWaitForSubToStart = false;
 
         //This lock prevents the user from enabeling/disabling the Temp Sync State while the cameras are in transition to another state.
@@ -41,21 +40,21 @@ namespace KinectServer
         KinectSettings oSettings;
         SettingsForm fSettingsForm;
         MainWindowForm fMainWindowForm;
-        object oClientSocketLock = new object();
+        object oClientLock = new object();
         object oFrameRequestLock = new object();
 
-        List<KinectSocket> lClientSockets = new List<KinectSocket>();
+        List<NativeLiveScanClient> liveScanClients = new List<NativeLiveScanClient>();
 
-        public event SocketListChangedHandler eSocketListChanged;
+        public event ClientListChangedHandler clientListChanged;
 
         public int nClientCount
         {
             get
             {
                 int nClients;
-                lock (oClientSocketLock)
+                lock (oClientLock)
                 {
-                    nClients = lClientSockets.Count;
+                    nClients = liveScanClients.Count;
                 }
                 return nClients;
             }
@@ -66,22 +65,22 @@ namespace KinectServer
             get 
             {
                 List<AffineTransform> cameraPoses = new List<AffineTransform>();
-                lock (oClientSocketLock)
+                lock (oClientLock)
                 {
-                    for (int i = 0; i < lClientSockets.Count; i++)
+                    foreach (var client in liveScanClients)
                     {
-                        cameraPoses.Add(lClientSockets[i].oCameraPose);
+                        cameraPoses.Add(client.oCameraPose);
                     }                    
                 }
                 return cameraPoses;
             }
             set
             {
-                lock (oClientSocketLock)
+                lock (oClientLock)
                 {
-                    for (int i = 0; i < lClientSockets.Count; i++)
+                    for (int i = 0; i < liveScanClients.Count; i++)
                     {
-                        lClientSockets[i].oCameraPose = value[i];
+                        liveScanClients[i].oCameraPose = value[i];
                     }
                 }
             }
@@ -92,11 +91,11 @@ namespace KinectServer
             get
             {
                 List<AffineTransform> worldTransforms = new List<AffineTransform>();
-                lock (oClientSocketLock)
+                lock (oClientLock)
                 {
-                    for (int i = 0; i < lClientSockets.Count; i++)
+                    foreach (var client in liveScanClients)
                     {
-                        worldTransforms.Add(lClientSockets[i].oWorldTransform);
+                        worldTransforms.Add(client.oWorldTransform);
                     }
                 }
                 return worldTransforms;
@@ -104,11 +103,11 @@ namespace KinectServer
 
             set
             {
-                lock (oClientSocketLock)
+                lock (oClientLock)
                 {
-                    for (int i = 0; i < lClientSockets.Count; i++)
+                    for (int i = 0; i < liveScanClients.Count; i++)
                     {
-                        lClientSockets[i].oWorldTransform = value[i];
+                        liveScanClients[i].oWorldTransform = value[i];
                     }
                 }
             }
@@ -119,11 +118,11 @@ namespace KinectServer
             get
             {
                 bool allCalibrated = true;
-                lock (oClientSocketLock)
+                lock (oClientLock)
                 {
-                    for (int i = 0; i < lClientSockets.Count; i++)
+                    foreach (var client in liveScanClients)
                     {
-                        if (!lClientSockets[i].bCalibrated)
+                        if (!client.bCalibrated)
                         {
                             allCalibrated = false;
                             break;
@@ -155,51 +154,57 @@ namespace KinectServer
             return fSettingsForm;
         }
 
-        private void SocketListChanged()
+        private void ClientListChanged()
         {
-            if (eSocketListChanged != null)
+            if (clientListChanged != null)
             {
-                eSocketListChanged(lClientSockets);
+                clientListChanged(liveScanClients);
             }
         }
 
-        public void StartServer()
+        public void LaunchClients(uint count)
         {
-            if (!bServerRunning)
+            // Start multiple instances of LiveScanClient
+            for (int i = 0; i < count; i++)
             {
-                oServerSocket = new Socket(SocketType.Stream, ProtocolType.Tcp);
-                oServerSocket.Blocking = false;
+                var client = new NativeLiveScanClient(i, "127.0.0.1");
+                liveScanClients.Add(client);
 
-                IPEndPoint endPoint = new IPEndPoint(IPAddress.Any, 48001);
-                oServerSocket.Bind(endPoint);
-                oServerSocket.Listen(10);
+                // Set callbacks so the client can call server methods directly
+                client.SetConfirmCapturedCallback(OnConfirmCaptured);
+                client.SetConfirmCalibratedCallback(OnConfirmCalibrated);
+                client.SetSendLatestFrameCallback();
+                client.SetSendStoredFrameCallback();
+                client.SetConfirmTempSyncStateCallback(OnConfirmTempSyncState);
+                client.SetConfirmMasterRestartCallback(OnConfirmMasterRestart);
+                client.SetSendDeviceSyncStateCallback(OnReceiveDeviceSyncState);
 
-                bServerRunning = true;
-                Thread listeningThread = new Thread(this.ListeningWorker);
-                listeningThread.Start();
-                Thread receivingThread = new Thread(this.ReceivingWorker);
-                receivingThread.Start();
+                client.Start();
+                
+                // Send settings
+                client.SetSettings(oSettings);
             }
+
+            ClientListChanged();
         }
 
         public void StopServer()
         {
-            if (bServerRunning)
+            // Ensure all LiveScanClients are terminated
+            foreach (var client in liveScanClients)
             {
-                bServerRunning = false;
-
-                oServerSocket.Close();
-                lock (oClientSocketLock)
-                    lClientSockets.Clear();
+                client.Stop();
             }
         }
 
         public void CaptureSynchronizedFrame()
         {
-            lock (oClientSocketLock)
+            lock (oClientLock)
             {
-                for (int i = 0; i < lClientSockets.Count; i++)
-                    lClientSockets[i].CaptureFrame();
+                foreach (var client in liveScanClients)
+                {
+                    client.StartFrameCapture();
+                }
             }
 
             //Wait till frames captured
@@ -208,11 +213,11 @@ namespace KinectServer
             {
                 allGathered = true;
 
-                lock (oClientSocketLock)
+                lock (oClientLock)
                 {
-                    for (int i = 0; i < lClientSockets.Count; i++)
+                    foreach (var client in liveScanClients)
                     {
-                        if (!lClientSockets[i].bFrameCaptured)
+                        if (!client.bFrameCaptured)
                         {
                             allGathered = false;
                             break;
@@ -224,34 +229,33 @@ namespace KinectServer
 
         public void Calibrate()
         {
-            lock (oClientSocketLock)
+            lock (oClientLock)
             {
-                for (int i = 0; i < lClientSockets.Count; i++)
+                foreach (var client in liveScanClients)
                 {
-                    lClientSockets[i].Calibrate();
+                    client.Calibrate();
                 }
             }
         }
 
         public void SendSettings()
         {
-            lock (oClientSocketLock)
+            lock (oClientLock)
             {
-                for (int i = 0; i < lClientSockets.Count; i++)
+                foreach (var client in liveScanClients)
                 {
-                    lClientSockets[i].SendSettings(oSettings);
+                    client.SetSettings(oSettings);
                 }
             }
         }
 
         public void SendCalibrationData()
         {
-            lock (oClientSocketLock)
+            lock (oClientLock)
             {
-
-                for (int i = 0; i < lClientSockets.Count; i++)
+                foreach (var client in liveScanClients)
                 {
-                    lClientSockets[i].SendCalibrationData();
+                    client.ReceiveCalibration();
                 }
             }
         }
@@ -261,11 +265,11 @@ namespace KinectServer
         /// </summary>
         public void RequestDeviceSyncState()
         {
-            lock (oClientSocketLock)
+            lock (oClientLock)
             {
-                for (int i = 0; i < lClientSockets.Count; i++)
+                foreach (var client in liveScanClients)
                 {
-                    lClientSockets[i].RequestTempSyncState();
+                    client.RequestSyncJackState();
                 }
             }
         }
@@ -275,37 +279,35 @@ namespace KinectServer
         /// </summary>
         public void SendTemporalSyncData()
         {
-            lock (oClientSocketLock)
+            lock (oClientLock)
             {
                 int masterCount = 0;
                 int subordinateCount = 0;
 
-                //First we check if we have recieved the Device Sync State of all Devices
-                //If not, we return and the next client who confirms their state starts this function again
-                for (int i = 0; i < lClientSockets.Count; i++)
+                // First we check if we have recieved the Device Sync State of all Devices
+                // If not, we return and the next client who confirms their state starts this function again
+                foreach (var client in liveScanClients)
                 {
-                    if(lClientSockets[i].currentDeviceTempSyncState == KinectSocket.eTempSyncConfig.MASTER)
+                    if (client.currentDeviceTempSyncState == eTempSyncConfig.MASTER)
                     {
                         masterCount++;
                     }
 
-                    if (lClientSockets[i].currentDeviceTempSyncState == KinectSocket.eTempSyncConfig.SUBORDINATE)
+                    if (client.currentDeviceTempSyncState == eTempSyncConfig.SUBORDINATE)
                     {
                         subordinateCount++;
                     }
 
-                    if (lClientSockets[i].currentDeviceTempSyncState == KinectSocket.eTempSyncConfig.UNKNOWN)
+                    if (client.currentDeviceTempSyncState == eTempSyncConfig.UNKNOWN)
                     {
                         return;
                     }
                 }
 
-                //On a second step we check if we have exactly one master and at least one subordinate
-
-                if(masterCount != 1 || subordinateCount < 1)
+                // Check if we have exactly one master and at least one subordinate
+                if (masterCount != 1 || subordinateCount < 1)
                 {
-                    //If not, we show a error message and disable the temporal sync
-
+                    // If not, we show a error message and disable the temporal sync
                     fMainWindowForm?.SetStatusBarOnTimer("Temporal Sync cables not connected properly", 5000);
                     fSettingsForm?.ActivateTempSyncEnableButton();
                     return;
@@ -316,15 +318,9 @@ namespace KinectServer
 
                 byte syncOffSetCounter = 0;
 
-                for (int i = 0; i < lClientSockets.Count; i++)
+                foreach (var client in liveScanClients)
                 {
-                    if(lClientSockets[i].currentDeviceTempSyncState == KinectSocket.eTempSyncConfig.SUBORDINATE)
-                    {
-                        syncOffSetCounter++;
-                    }
-
-                    lClientSockets[i].SendTemporalSyncStatus(true, syncOffSetCounter);
-
+                    client.EnableTemporalSync(syncOffSetCounter);
                 }
 
                 bWaitForSubToStart = true;
@@ -339,11 +335,11 @@ namespace KinectServer
         {
             allDevicesInitialized = false;
 
-            lock (oClientSocketLock)
+            lock (oClientLock)
             {
-                for (int i = 0; i < lClientSockets.Count; i++)
+                foreach (var client in liveScanClients)
                 {
-                    lClientSockets[i].SendTemporalSyncStatus(false, 0);
+                    client.DisableTemporalSync();
                 }
             }
         }
@@ -354,11 +350,11 @@ namespace KinectServer
             if (bWaitForSubToStart)
                 return;
 
-            lock (oClientSocketLock)
+            lock (oClientLock)
             {
-                for (int i = 0; i < lClientSockets.Count; i++)
+                foreach (var client in liveScanClients)
                 {
-                    if (lClientSockets[i].currentClientTempSyncState != KinectSocket.eTempSyncConfig.STANDALONE)
+                    if (client.currentClientTempSyncState != eTempSyncConfig.STANDALONE)
                     {
                         return;
                     }
@@ -380,11 +376,11 @@ namespace KinectServer
 
             bool allSubsStarted = true;
 
-            lock (oClientSocketLock)
+            lock (oClientLock)
             {
-                for (int i = 0; i < lClientSockets.Count; i++)
+                foreach (var client in liveScanClients)
                 {
-                    if (!lClientSockets[i].bSubStarted && lClientSockets[i].currentClientTempSyncState == KinectSocket.eTempSyncConfig.SUBORDINATE)
+                    if (!client.bSubStarted && client.currentClientTempSyncState == eTempSyncConfig.SUBORDINATE)
                     {
                         allSubsStarted = false;
                         break;
@@ -395,11 +391,11 @@ namespace KinectServer
 
                 if (allSubsStarted)
                 {
-                    for (int i = 0; i < lClientSockets.Count; i++)
+                    foreach (var client in liveScanClients)
                     {
-                        if(lClientSockets[i].currentDeviceTempSyncState == KinectSocket.eTempSyncConfig.MASTER)
+                        if(client.currentDeviceTempSyncState == eTempSyncConfig.MASTER)
                         {
-                            lClientSockets[i].SendMasterInitialize();
+                            client.StartMaster();
                             return;
                         }
                     }
@@ -420,19 +416,32 @@ namespace KinectServer
             return allDevicesInitialized;
         }
 
-        public bool GetStoredFrame(List<List<byte>> lFramesRGB, List<List<Single>> lFramesVerts)
+        public bool GetStoredFrame(ref List<List<byte>> lFramesRGB, ref List<List<float>> lFramesVerts)
         {
             bool bNoMoreStoredFrames;
+
+            int count = lFramesRGB.Count;
+
+            // Ensure list capacity
+            if (lFramesVerts.Capacity < count)
+                lFramesVerts.Capacity = count;
+            if (lFramesRGB.Capacity < count)
+                lFramesRGB.Capacity = count;
+
             lFramesRGB.Clear();
             lFramesVerts.Clear();
             
             lock (oFrameRequestLock)
             {
                 //Request frames
-                lock (oClientSocketLock)
+                lock (oClientLock)
                 {
-                    for (int i = 0; i < lClientSockets.Count; i++)
-                        lClientSockets[i].RequestStoredFrame();
+                    foreach (var client in liveScanClients)
+                    {
+                        client.bStoredFrameReceived = false;
+                        client.bNoMoreStoredFrames = false;
+                        client.RequestStoredFrame();
+                    }
                 }
 
                 //Wait till frames received
@@ -441,29 +450,29 @@ namespace KinectServer
                 while (!allGathered)
                 {
                     allGathered = true;                
-                    lock (oClientSocketLock)
+                    lock (oClientLock)
                     {
-                        for (int i = 0; i < lClientSockets.Count; i++)
+                        foreach (var client in liveScanClients)
                         {
-                            if (!lClientSockets[i].bStoredFrameReceived)
+                            if (!client.bStoredFrameReceived)
                             {
                                 allGathered = false;
                                 break;
                             }
 
-                            if (lClientSockets[i].bNoMoreStoredFrames)
+                            if (client.bNoMoreStoredFrames)
                                 bNoMoreStoredFrames = true;
                         }
                     }
                 }
 
                 //Store received frames
-                lock (oClientSocketLock)
+                lock (oClientLock)
                 {
-                    for (int i = 0; i < lClientSockets.Count; i++)
+                    foreach (var client in liveScanClients)
                     {
-                        lFramesRGB.Add(new List<byte>(lClientSockets[i].lFrameRGB));
-                        lFramesVerts.Add(new List<Single>(lClientSockets[i].lFrameVerts));
+                        lFramesRGB.Add(client.lFrameRGB);
+                        lFramesVerts.Add(client.lFrameVerts);
                     }
                 }
             }
@@ -474,19 +483,29 @@ namespace KinectServer
                 return true;
         }
 
-        public void GetLatestFrame(List<List<byte>> lFramesRGB, List<List<Single>> lFramesVerts, List<List<Body>> lFramesBody)
+        public void GetLatestFrame(ref List<List<byte>> lFramesRGB, ref List<List<float>> lFramesVerts)
         {
+            int count = lFramesRGB.Count;
+
+            // Ensure list capacity
+            if (lFramesVerts.Capacity < count)
+                lFramesVerts.Capacity = count;
+            if (lFramesRGB.Capacity < count)
+                lFramesRGB.Capacity = count;
+
             lFramesRGB.Clear();
             lFramesVerts.Clear();
-            lFramesBody.Clear();
 
             lock (oFrameRequestLock)
             {
                 //Request frames
-                lock (oClientSocketLock)
+                lock (oClientLock)
                 {
-                    for (int i = 0; i < lClientSockets.Count; i++)
-                        lClientSockets[i].RequestLastFrame();
+                    foreach (var client in liveScanClients)
+                    {
+                        client.bLatestFrameReceived = false;
+                        client.RequestLastFrame();
+                    }
                 }
 
                 //Wait till frames received
@@ -496,166 +515,112 @@ namespace KinectServer
                 {
                     allGathered = true;
 
-                    lock (oClientSocketLock)
+                    lock (oClientLock)
                     {
-                        for (int i = 0; i < lClientSockets.Count; i++)
+                        foreach (var client in liveScanClients)
                         {
-                            if (!lClientSockets[i].bLatestFrameReceived)
+                            if (!client.bLatestFrameReceived)
                             {
                                 allGathered = false;
                                 break;
                             }
                         }
                     }
-
                 }
 
                 //Store received frames
-                lock (oClientSocketLock)
+                lock (oClientLock)
                 {
-                    for (int i = 0; i < lClientSockets.Count; i++)
+                    foreach(var client in liveScanClients)
                     {
-                        lFramesRGB.Add(new List<byte>(lClientSockets[i].lFrameRGB));
-                        lFramesVerts.Add(new List<Single>(lClientSockets[i].lFrameVerts));
-                        lFramesBody.Add(new List<Body>(lClientSockets[i].lBodies));
+                        lFramesRGB.Add(client.lFrameRGB);
+                        lFramesVerts.Add(client.lFrameVerts);
                     }
                 }
-
             }
         }
 
         public void ClearStoredFrames()
         {
-            lock (oClientSocketLock)
+            lock (oClientLock)
             {
-                for (int i = 0; i < lClientSockets.Count; i++)
+                foreach (var client in liveScanClients)
                 {
-                    lClientSockets[i].ClearStoredFrames();
+                    client.ClearStoredFrames();
                 }
             }
         }
 
-        private void ListeningWorker()
+        private void OnConfirmCaptured(int clientIndex)
         {
-            while (bServerRunning)
-            {
-                try
-                {
-                    Socket newClient = oServerSocket.Accept();
-
-                    //we do not want to add new clients while a frame is being requested
-                    lock (oFrameRequestLock)
-                    {
-                        lock (oClientSocketLock)
-                        {
-                            lClientSockets.Add(new KinectSocket(newClient));
-                            lClientSockets[lClientSockets.Count - 1].SendSettings(oSettings);
-                            lClientSockets[lClientSockets.Count - 1].eChanged += new SocketChangedHandler(SocketListChanged);
-                            lClientSockets[lClientSockets.Count - 1].eSubInitialized += new SubOrdinateInitialized(CheckForMasterStart);
-                            lClientSockets[lClientSockets.Count - 1].eMasterRestart += new MasterRestarted(MasterSuccessfullyRestarted);
-                            lClientSockets[lClientSockets.Count - 1].eSyncJackstate += new RecievedSyncJackState(SendTemporalSyncData);
-                            lClientSockets[lClientSockets.Count - 1].eStandAloneInitialized += new StandAloneInitialized(ConfirmTemporalSyncDisabled);
-
-                            if (eSocketListChanged != null)
-                            {
-                                eSocketListChanged(lClientSockets);
-                            }
-                        }
-                    }
-                }
-                catch (SocketException)
-                {
-                }
-                System.Threading.Thread.Sleep(100);
-            }
-
-            if (eSocketListChanged != null)
-            {
-                eSocketListChanged(lClientSockets);
-            }
+            liveScanClients[clientIndex].bFrameCaptured = true;
         }
 
-        private void ReceivingWorker()
+        private void OnConfirmCalibrated(int clientIndex, int markerId, float[] R, float[] t)
         {
-            System.Timers.Timer checkConnectionTimer = new System.Timers.Timer();
-            checkConnectionTimer.Interval = 1000;
+            NativeLiveScanClient client = liveScanClients[clientIndex];
 
-            checkConnectionTimer.Elapsed += delegate(object sender, System.Timers.ElapsedEventArgs e)
+            client.oWorldTransform = new AffineTransform
             {
-                lock (oClientSocketLock)
-                {
-                    for (int i = 0; i < lClientSockets.Count; i++)
-                    {
-                        if (!lClientSockets[i].SocketConnected())
-                        {
-                            lClientSockets.RemoveAt(i);
-                            if (eSocketListChanged != null)
-                            {
-                                eSocketListChanged(lClientSockets);
-                            }
-                            continue;
-                        }
-                    }
-                }
+                R = new float[3, 3],
+                t = new float[3]
             };
 
-            checkConnectionTimer.Start();
+            for (int i = 0; i < 3; i++)
+                for (int j = 0; j < 3; j++)
+                    client.oWorldTransform.R[i, j] = R[i * 3 + j];
 
-            while (bServerRunning)
+            for (int i = 0; i < 3; i++)
+                client.oWorldTransform.t[i] = t[i];
+
+            client.oCameraPose.R = client.oWorldTransform.R;
+            for (int i = 0; i < 3; i++)
             {
-                lock (oClientSocketLock)
+                client.oCameraPose.t[i] = 0.0f;
+                for (int j = 0; j < 3; j++)
                 {
-                    for (int i = 0; i < lClientSockets.Count; i++)
-                    {
-                        byte[] buffer = lClientSockets[i].Receive(1);
-
-                        while (buffer.Length != 0)
-                        {
-                            if (buffer[0] == 0)
-                            {
-                                lClientSockets[i].bFrameCaptured = true;
-                            }
-                            else if (buffer[0] == 1)
-                            {
-                                lClientSockets[i].ReceiveCalibrationData();
-                            }
-                            //stored frame
-                            else if (buffer[0] == 2)
-                            {
-                                lClientSockets[i].ReceiveFrame();
-                                lClientSockets[i].bStoredFrameReceived = true;
-                            }
-                            //last frame
-                            else if (buffer[0] == 3)
-                            {
-                                lClientSockets[i].ReceiveFrame();
-                                lClientSockets[i].bLatestFrameReceived = true;
-                            }
-
-                            else if (buffer[0] == 4)
-                            {
-                                lClientSockets[i].ReceiveTemporalSyncStatus();
-                            }
-
-                            else if(buffer[0] == 5)
-                            {
-                                lClientSockets[i].RecieveMasterHasRestarted();
-                            }
-
-                            else if(buffer[0] == 6)
-                            {
-                                lClientSockets[i].RecieveDeviceSyncState();
-                            }
-
-                            buffer = lClientSockets[i].Receive(1);
-                        }
-                    }
+                    client.oCameraPose.t[i] += client.oWorldTransform.t[j] * client.oWorldTransform.R[i, j];
                 }
-
-                Thread.Sleep(10);
             }
 
-            checkConnectionTimer.Stop();
+            client.bCalibrated = true;
+            client.UpdateSocketState();
+            ClientListChanged();
+        }
+
+        private void OnConfirmTempSyncState(int clientIndex, eTempSyncConfig state)
+        {
+            NativeLiveScanClient client = liveScanClients[clientIndex];
+            client.currentClientTempSyncState = state;
+
+            if (state == eTempSyncConfig.SUBORDINATE)
+            {
+                client.bSubStarted = true;
+                client.bMasterStarted = false;
+                CheckForMasterStart();
+            }
+            else if (state == eTempSyncConfig.MASTER)
+            {
+                client.bSubStarted = false;
+            }
+            else if (state == eTempSyncConfig.STANDALONE)
+            {
+                client.bSubStarted = false;
+                client.bMasterStarted = false;
+                ConfirmTemporalSyncDisabled();
+            }
+
+            client.UpdateSocketState();
+        }
+
+        private void OnConfirmMasterRestart(int clientIndex)
+        {
+            MasterSuccessfullyRestarted();
+        }
+
+        private void OnReceiveDeviceSyncState(int clientIndex)
+        {
+            SendTemporalSyncData();
         }
     }
 }

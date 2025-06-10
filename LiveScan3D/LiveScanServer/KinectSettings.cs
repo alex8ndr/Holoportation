@@ -16,6 +16,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -57,6 +58,52 @@ namespace KinectServer
             aMaxBounds[0] = 5f;
             aMaxBounds[1] = 5f;
             aMaxBounds[2] = 5f;
+        }
+
+        public unsafe NativeKinectSettings ToNative(out GCHandle markerHandle)
+        {
+            NativeKinectSettings native = new NativeKinectSettings
+            {
+                minBounds = aMinBounds,
+                maxBounds = aMaxBounds,
+                filter = bFilter,
+                filterNeighbors = nFilterNeighbors,
+                filterThreshold = fFilterThreshold,
+                numMarkers = lMarkerPoses.Count,
+                streamOnlyBodies = bStreamOnlyBodies,
+                compressionLevel = iCompressionLevel,
+                autoExposureEnabled = bAutoExposureEnabled,
+                exposureStep = nExposureStep
+            };
+
+            // Allocate array
+            var nativeMarkers = new NativeMarkerPose[lMarkerPoses.Count];
+
+            for (int i = 0; i < nativeMarkers.Length; i++)
+            {
+                var src = lMarkerPoses[i];
+
+                unsafe
+                {
+                    fixed (float* rDest = nativeMarkers[i].R)
+                    fixed (float* tDest = nativeMarkers[i].t)
+                    {
+                        for (int j = 0; j < 9; j++)
+                            rDest[j] = src.pose.R.Cast<float>().ToArray()[j];
+
+                        for (int j = 0; j < 3; j++)
+                            tDest[j] = src.pose.t[j];
+                    }
+
+                    nativeMarkers[i].markerId = src.id;
+                }
+            }
+
+            // Pin nativeMarkers
+            markerHandle = GCHandle.Alloc(nativeMarkers, GCHandleType.Pinned);
+            native.markerPoses = markerHandle.AddrOfPinnedObject();
+
+            return native;
         }
 
         public List<byte> ToByteList()
