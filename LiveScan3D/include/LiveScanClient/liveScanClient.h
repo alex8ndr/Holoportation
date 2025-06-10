@@ -94,14 +94,14 @@ private:
     void HandleClient();
     void ConfirmCaptured();
     void ConfirmCalibrated();
-    void SendLatestFrame(vector<Point3s>& vertices, vector<RGB>& RGB);
+    void SendLatestFrame();
     void SendStoredFrame(vector<Point3s>& vertices, vector<RGB>& RGB, bool noMoreFrames);
     void ConfirmTempSyncState();
     void ConfirmMasterRestart();
     void SendDeviceSyncState();
 
     void ClientThreadFunction();
-    void ProcessFrame(Point3f* vertices, RGB* colorInDepth, vector<Body>& bodies, BYTE* bodyIndex);
+    void ProcessFrame();
     void SetupLogging(int clientIndex);
     void Log(const std::string& message);
 };

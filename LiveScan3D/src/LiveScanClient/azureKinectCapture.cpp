@@ -375,7 +375,7 @@ bool AzureKinectCapture::AcquireFrame()
     }
 
     // Resize the k4a_image to the precalculated size
-    cv::resize(cImg, cImgResized, cImgResized.size(), 0, 0, cv::INTER_NEAREST);
+    cv::resize(cImg, cImgResized, cImgResized.size(), 0, 0, cv::INTER_AREA);
 
     // Create a k4a_image from the resized OpenCV Mat. Code taken from here: https://github.com/microsoft/Azure-Kinect-Sensor-SDK/issues/978#issuecomment-566002061
     k4a_image_create(K4A_IMAGE_FORMAT_COLOR_BGRA32, cImgResized.cols, cImgResized.rows, cImgResized.cols * 4 * (int)sizeof(uint8_t), &colorImageDownscaled);

@@ -157,7 +157,7 @@ void LiveScanClient::UpdateFrame()
 
 	{
 		std::lock_guard<std::mutex> lock(clientThreadMutex);
-		ProcessFrame(m_pCameraSpaceCoordinates, pCapture->pColorRGBX, pCapture->vBodies, pCapture->pBodyIndex);
+		ProcessFrame();
 
 		if (m_bCaptureFrame)
 		{
@@ -235,7 +235,7 @@ void LiveScanClient::RequestStoredFrame()
 
 void LiveScanClient::RequestLastFrame()
 {
-	SendLatestFrame(m_vLastFrameVertices, m_vLastFrameRGB);
+	SendLatestFrame();
 }
 
 void LiveScanClient::ReceiveCalibration(const AffineTransform& transform)
@@ -400,20 +400,20 @@ void LiveScanClient::ConfirmCalibrated()
 	m_bConfirmCalibrated = false;
 }
 
-void LiveScanClient::SendLatestFrame(std::vector<Point3s>& vertices, std::vector<RGB>& RGB)
+void LiveScanClient::SendLatestFrame()
 {
 	if (m_pWrapper && m_pWrapper->sendLatestFrameCallback)
 	{
-		int count = static_cast<int>(vertices.size());
-		if (count != RGB.size())
+		int count = static_cast<int>(m_vLastFrameVertices.size());
+		if (count != m_vLastFrameRGB.size())
 		{
-			Log("Warning: size mismatch! There were " + std::to_string(count) + " vertices and " + std::to_string(RGB.size()) + " colors. Sending smallest size.");
+			Log("Warning: size mismatch! There were " + std::to_string(count) + " vertices and " + std::to_string(m_vLastFrameRGB.size()) + " colors. Sending smallest size.");
 
-			if (count < RGB.size())
-				count = RGB.size();
+			if (count < m_vLastFrameRGB.size())
+				count = m_vLastFrameRGB.size();
 		}
 
-		m_pWrapper->sendLatestFrameCallback(m_nClientIndex, vertices.data(), RGB.data(), count);
+		m_pWrapper->sendLatestFrameCallback(m_nClientIndex, m_vLastFrameVertices.data(), m_vLastFrameRGB.data(), count);
 	}
 }
 
@@ -519,7 +519,7 @@ void LiveScanClient::HandleClient()
 	}
 }
 
-void LiveScanClient::ProcessFrame(Point3f *vertices, RGB *colorInDepth, vector<Body> &bodies, BYTE* bodyIndex)
+void LiveScanClient::ProcessFrame()
 {
 	unsigned int nVertices = pCapture->nColorFrameHeight * pCapture->nColorFrameWidth;
 
@@ -532,15 +532,12 @@ void LiveScanClient::ProcessFrame(Point3f *vertices, RGB *colorInDepth, vector<B
 
 	for (unsigned int vertexIndex = 0; vertexIndex < nVertices; vertexIndex++)
 	{
-		if (m_bStreamOnlyBodies && bodyIndex[vertexIndex] >= bodies.size())
-			continue;
-
 		//As the resizing function doesn't return a valid RGB-Reserved value which indicates that this pixel is invalid,
 		//we cut all vertices under a distance of 0.0001mm, as the invalid vertices always have a Z-Value of 0
-		if (vertices[vertexIndex].Z >= 0.0001 && colorInDepth[vertexIndex].rgbReserved == 255)
+		if (m_pCameraSpaceCoordinates[vertexIndex].Z >= 0.0001 && pCapture->pColorRGBX[vertexIndex].rgbReserved == 255)
 		{
-			Point3f temp = vertices[vertexIndex];
-			RGB tempColor = colorInDepth[vertexIndex];
+			Point3f temp = m_pCameraSpaceCoordinates[vertexIndex];
+			RGB tempColor = pCapture->pColorRGBX[vertexIndex];
 			if (calibration.bCalibrated)
 			{
 				temp.X += calibration.worldT[0];
@@ -568,29 +565,6 @@ void LiveScanClient::ProcessFrame(Point3f *vertices, RGB *colorInDepth, vector<B
 		}
 	}
 
-	vector<Body> tempBodies = bodies;
-
-	//for (unsigned int i = 0; i < tempBodies.size(); i++)
-	//{
-	//	for (unsigned int j = 0; j < tempBodies[i].vJoints.size(); j++)
-	//	{
-	//		if (calibration.bCalibrated)
-	//		{
-	//			tempBodies[i].vJoints[j].Position.X += calibration.worldT[0];
-	//			tempBodies[i].vJoints[j].Position.Y += calibration.worldT[1];
-	//			tempBodies[i].vJoints[j].Position.Z += calibration.worldT[2];
-
-	//			Point3f tempPoint(tempBodies[i].vJoints[j].Position.X, tempBodies[i].vJoints[j].Position.Y, tempBodies[i].vJoints[j].Position.Z);
-
-	//			tempPoint = RotatePoint(tempPoint, calibration.worldR);
-
-	//			tempBodies[i].vJoints[j].Position.X = tempPoint.X;
-	//			tempBodies[i].vJoints[j].Position.Y = tempPoint.Y;
-	//			tempBodies[i].vJoints[j].Position.Z = tempPoint.Z;
-	//		}
-	//	}
-	//}
-
 	vector<Point3f> goodVertices(goodVerticesCount);
 	vector<RGB> goodColorPoints(goodVerticesCount);
 	int goodVerticesShortCounter = 0;
@@ -601,11 +575,10 @@ void LiveScanClient::ProcessFrame(Point3f *vertices, RGB *colorInDepth, vector<B
 		if (!AllVertices[i].Invalid) 
 		{
 			goodVertices[goodVerticesShortCounter] = AllVertices[i];
-			goodColorPoints[goodVerticesShortCounter] = colorInDepth[i];
+			goodColorPoints[goodVerticesShortCounter] = pCapture->pColorRGBX[i];
 			goodVerticesShortCounter++;
 		}
 	}
-
 	if (m_bFilter)
 		filter(goodVertices, goodColorPoints, m_nFilterNeighbors, m_fFilterThreshold);
 
@@ -617,7 +590,6 @@ void LiveScanClient::ProcessFrame(Point3f *vertices, RGB *colorInDepth, vector<B
 		goodVerticesShort[i] = goodVertices[i];
 	}
 
-	m_vLastFrameBody = tempBodies;
 	m_vLastFrameVertices = goodVerticesShort;
 	m_vLastFrameRGB = goodColorPoints;
 }
