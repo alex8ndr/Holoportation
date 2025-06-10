@@ -3,25 +3,23 @@
 #include <thread>
 #include <memory>
 #include <map>
+#include <locale>
+#include <codecvt> 
 
-struct LiveScanClientWrapper {
-	std::unique_ptr<LiveScanClient> client;
-	std::thread thread;
-	std::wstring serverIP;
-	int index;
-
-	LiveScanClientWrapper(int idx, const std::string& ip)
-		: index(idx)
-	{
-		client = std::make_unique<LiveScanClient>(idx);
-		serverIP = std::wstring(ip.begin(), ip.end());
-	}
-};
-
+/*
+* Server to client (inbound) calls
+*/
 LiveScanClientHandle CreateClient(int index, const char* serverIP)
 {
-	auto* wrapper = new LiveScanClientWrapper(index, serverIP);
-	return static_cast<LiveScanClientHandle>(wrapper);
+	auto* wrapper = new LiveScanClientWrapper();
+
+	// Convert const char* to std::wstring
+	std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
+	wrapper->serverIP = converter.from_bytes(serverIP);
+
+	wrapper->client = std::make_unique<LiveScanClient>(index);
+	wrapper->client->m_pWrapper = wrapper;
+	return wrapper;
 }
 
 void StartClient(LiveScanClientHandle handle)
@@ -140,4 +138,56 @@ void RequestSyncJackState(LiveScanClientHandle handle)
 	if (!wrapper) return;
 
 	wrapper->client->RequestSyncJackState();
+}
+
+/*
+* Client to server (outbound) calls
+*/
+void SetConfirmCapturedCallback(LiveScanClientHandle handle, ConfirmCapturedCallback cb)
+{
+	auto* wrapper = static_cast<LiveScanClientWrapper*>(handle);
+	if (wrapper)
+		wrapper->confirmCapturedCallback = cb;
+}
+
+void SetConfirmCalibratedCallback(LiveScanClientHandle handle, ConfirmCalibratedCallback cb)
+{
+	auto* wrapper = static_cast<LiveScanClientWrapper*>(handle);
+	if (wrapper)
+		wrapper->confirmCalibratedCallback = cb;
+}
+
+void SetSendLatestFrameCallback(LiveScanClientHandle handle, SendLatestFrameCallback cb)
+{
+	auto* wrapper = static_cast<LiveScanClientWrapper*>(handle);
+	if (wrapper)
+		wrapper->sendLatestFrameCallback = cb;
+}
+
+void SetSendStoredFrameCallback(LiveScanClientHandle handle, SendStoredFrameCallback cb)
+{
+	auto* wrapper = static_cast<LiveScanClientWrapper*>(handle);
+	if (wrapper)
+		wrapper->sendStoredFrameCallback = cb;
+}
+
+void SetConfirmTempSyncStateCallback(LiveScanClientHandle handle, ConfirmTempSyncStateCallback cb)
+{
+	auto* wrapper = static_cast<LiveScanClientWrapper*>(handle);
+	if (wrapper)
+		wrapper->confirmTempSyncStateCallback = cb;
+}
+
+void SetConfirmMasterRestartCallback(LiveScanClientHandle handle, ConfirmMasterRestartCallback cb)
+{
+	auto* wrapper = static_cast<LiveScanClientWrapper*>(handle);
+	if (wrapper)
+		wrapper->confirmMasterRestartCallback = cb;
+}
+
+void SetSendDeviceSyncStateCallback(LiveScanClientHandle handle, SendDeviceSyncStateCallback cb)
+{
+	auto* wrapper = static_cast<LiveScanClientWrapper*>(handle);
+	if (wrapper)
+		wrapper->sendDeviceSyncStateCallback = cb;
 }

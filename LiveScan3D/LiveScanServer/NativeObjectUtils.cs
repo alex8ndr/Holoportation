@@ -40,3 +40,21 @@ public unsafe struct NativeAffineTransform
     public fixed float R[9]; // 3x3 matrix
     public fixed float t[3]; // translation vector
 }
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct Point3s
+{
+    public short X;
+    public short Y;
+    public short Z;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct RGB
+{
+    public byte rgbBlue;
+    public byte rgbGreen;
+    public byte rgbRed;
+    public byte rgbReserved;
+}
+

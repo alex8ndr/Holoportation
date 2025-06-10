@@ -567,29 +567,29 @@ void AzureKinectCapture::SetExposureState(bool enableAutoExposure, int exposureS
 /// This is achieved by looking at how the sync out and sync in ports of the device are connected
 /// </summary>
 /// <returns>Returns int -1 for Subordinate, int 0 for Master and int 1 for Standalone</returns>
-int AzureKinectCapture::GetSyncJackState()
+SYNC_STATE AzureKinectCapture::GetSyncJackState()
 {
     if (K4A_RESULT_SUCCEEDED == k4a_device_get_sync_jack(kinectSensor, &syncInConnected, &syncOutConnected))
     {
         if (syncInConnected)
         {
-            return -1; //Device is Subordinate, as it recieves a signal via its "Sync In" Port
+            return Subordinate; // Device is Subordinate, as it receives a signal via its "Sync In" Port
         }
 
         else if (!syncInConnected && syncOutConnected)
         {
-            return 0; //Device is Master, as it doens't recieve a signal from its "Sync In" Port, but sends one through its "Sync Out" Port
+            return Master; // Device is Master, as it doesn't receive a signal from its "Sync In" Port, but sends one through its "Sync Out" Port
         }
 
         else
         {
-            return 1; //Device is Standalone, as it doesn't have a valid cabel configuration on its Sync Ports
+            return Standalone; // Device is Standalone, as it doesn't have a valid cable configuration on its Sync Ports
         }
     }
 
     else
     {
-        return 1; //Probably failed because there are no cabels connected, this means the device should be set as standalone
+        return Standalone; // Probably failed because there are no cables connected, this means the device should be set as standalone
     }
 }
 

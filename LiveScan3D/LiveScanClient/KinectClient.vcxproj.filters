@@ -63,6 +63,9 @@
     <ClInclude Include="..\include\LiveScanClient\objectUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\include\LiveScanClient\liveScanClientWrapper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\socketCS.cpp">

@@ -34,7 +34,7 @@ public:
     void MapColorFrameToCameraSpace(Point3f* pCameraSpacePoints);
     void MapDepthFrameToColorSpace(UINT16* pDepthInColorSpace);
     void MapColorFrameToDepthSpace(RGB* pColorInDepthSpace);
-    int GetSyncJackState();
+    SYNC_STATE GetSyncJackState();
     uint64_t GetTimeStamp();
     int GetDeviceIndex();
     void SetExposureState(bool enableAutoExposure, int exposureStep);

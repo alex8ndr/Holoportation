@@ -48,7 +48,7 @@ public:
 	virtual void MapColorFrameToCameraSpace(Point3f *pCameraSpacePoints) = 0;
 	virtual void MapDepthFrameToColorSpace(UINT16 *pColorSpacePoints) = 0;
 	virtual void MapColorFrameToDepthSpace(RGB *pDepthSpacePoints) = 0;
-	virtual int GetSyncJackState() = 0;
+	virtual SYNC_STATE GetSyncJackState() = 0;
 	virtual uint64_t GetTimeStamp() = 0;
 	virtual int GetDeviceIndex() = 0;
 	virtual void SetExposureState(bool enableAutoExposure, int exposureStep) = 0;

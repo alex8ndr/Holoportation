@@ -47,14 +47,28 @@ namespace KinectServer
         KinectServer oServer;
         TransferServer oTransferServer;
 
-        //Those three variables are shared with the OpenGLWindow class and are used to exchange data with it.
-        //Vertices from all of the sensors
+        // Those three variables are shared with the OpenGLWindow class and are used to exchange data with it.
+        // Vertices from all of the sensors
         List<float> lAllVertices = new List<float>();
-        //Color data from all of the sensors
+
+        // Vertices from each sensor, separated in lists
+        List<List<float>> lAllSensorVertices = new List<List<float>>();
+
+        // Stored frame vertices from each sensor, separated in lists
+        List<List<float>> lAllSensorStoredVertices = new List<List<float>>();
+
+        // Color data from all of the sensors
         List<byte> lAllColors = new List<byte>();
-        //Sensor poses from all of the sensors
+
+        // Color data from each sensor, separated in lists
+        List<List<byte>> lAllSensorColors = new List<List<byte>>();
+
+        // Stored frame color data from each sensor, separated in lists
+        List<List<byte>> lAllSensorStoredColors = new List<List<byte>>();
+
+        // Sensor poses from all of the sensors
         List<AffineTransform> lAllCameraPoses = new List<AffineTransform>();
-        //Body data from all of the sensors
+        // Body data from all of the sensors
         List<Body> lAllBodies = new List<Body>();
 
         bool bServerRunning = false;
@@ -85,7 +99,7 @@ namespace KinectServer
             }
 
             oServer = new KinectServer(oSettings);
-            oServer.eSocketListChanged += new SocketListChangedHandler(UpdateListView);
+            oServer.clientListChanged += new ClientListChangedHandler(UpdateListView);
             oTransferServer = new TransferServer();
             oTransferServer.lVertices = lAllVertices;
             oTransferServer.lColors = lAllColors;
@@ -93,7 +107,6 @@ namespace KinectServer
             InitializeComponent();
 
             // Automatically start the server
-            oServer.StartServer();
             oTransferServer.StartServer();
             bServerRunning = true;
             //btStart.Text = "Stop server";
@@ -123,7 +136,6 @@ namespace KinectServer
 
             if (bServerRunning)
             {
-                oServer.StartServer();
                 oTransferServer.StartServer();
                 //btStart.Text = "Stop server";
             }
@@ -214,10 +226,7 @@ namespace KinectServer
             //This loop is running till it is either cancelled (using the btRecord button), or till there are no more stored frames.
             while (!worker.CancellationPending)
             {
-                List<List<byte>> lFrameRGBAllDevices = new List<List<byte>>();
-                List<List<float>> lFrameVertsAllDevices = new List<List<float>>();
-
-                bool success = oServer.GetStoredFrame(lFrameRGBAllDevices, lFrameVertsAllDevices);
+                bool success = oServer.GetStoredFrame(ref lAllSensorStoredColors, ref lAllSensorStoredVertices);
 
                 //This indicates that there are no more stored frames.
                 if (!success)
@@ -225,25 +234,25 @@ namespace KinectServer
 
                 nFrames++;
                 int nVerticesTotal = 0;
-                for (int i = 0; i < lFrameRGBAllDevices.Count; i++)
+                for (int i = 0; i < lAllSensorStoredColors.Count; i++)
                 {
-                    nVerticesTotal += lFrameVertsAllDevices[i].Count;
+                    nVerticesTotal += lAllSensorStoredVertices[i].Count;
                 }
 
                 List<byte> lFrameRGB = new List<byte>();
                 List<Single> lFrameVerts = new List<Single>();
 
                 SetStatusBarOnTimer("Saving frame " + (nFrames).ToString() + ".", 5000);
-                for (int i = 0; i < lFrameRGBAllDevices.Count; i++)
+                for (int i = 0; i < lAllSensorStoredColors.Count; i++)
                 {                                 
-                    lFrameRGB.AddRange(lFrameRGBAllDevices[i]);
-                    lFrameVerts.AddRange(lFrameVertsAllDevices[i]);
+                    lFrameRGB.AddRange(lAllSensorStoredColors[i]);
+                    lFrameVerts.AddRange(lAllSensorStoredVertices[i]);
 
                     //This is ran if the frames from each client are to be placed in separate files.
                     if (!oSettings.bMergeScansForSave)
                     {
                         string outputFilename = outDir + "\\" + nFrames.ToString().PadLeft(5, '0') + i.ToString() + ".ply";
-                        Utils.saveToPly(outputFilename, lFrameVertsAllDevices[i], lFrameRGBAllDevices[i], oSettings.bSaveAsBinaryPLY);                        
+                        Utils.saveToPly(outputFilename, lAllSensorStoredVertices[i], lAllSensorStoredColors[i], oSettings.bSaveAsBinaryPLY);                        
                     }
                 }
 
@@ -274,10 +283,6 @@ namespace KinectServer
         //Continually requests frames that will be displayed in the live view window.
         private void updateWorker_DoWork(object sender, DoWorkEventArgs e)
         {
-            List<List<byte>> lFramesRGB = new List<List<byte>>();
-            List<List<Single>> lFramesVerts = new List<List<Single>>();
-            List<List<Body>> lFramesBody = new List<List<Body>>();
-
             BackgroundWorker worker = (BackgroundWorker)sender;
             while (!worker.CancellationPending)
             {
@@ -288,21 +293,22 @@ namespace KinectServer
                     continue;
                 }
 
-                oServer.GetLatestFrame(lFramesRGB, lFramesVerts, lFramesBody);
+                lock (lAllSensorVertices)
+                {
+                    oServer.GetLatestFrame(ref lAllSensorColors, ref lAllSensorVertices);
+                }
 
                 //Update the vertex and color lists that are common between this class and the OpenGLWindow.
                 lock (lAllVertices)
                 {
                     lAllVertices.Clear();
                     lAllColors.Clear();
-                    lAllBodies.Clear();
                     lAllCameraPoses.Clear();
 
-                    for (int i = 0; i < lFramesRGB.Count; i++)
+                    for (int i = 0; i < lAllSensorColors.Count; i++)
                     {
-                        lAllVertices.AddRange(lFramesVerts[i]);
-                        lAllColors.AddRange(lFramesRGB[i]);
-                        lAllBodies.AddRange(lFramesBody[i]);                       
+                        lAllVertices.AddRange(lAllSensorVertices[i]);
+                        lAllColors.AddRange(lAllSensorColors[i]);
                     }
 
                     lAllCameraPoses.AddRange(oServer.lCameraPoses);
@@ -316,23 +322,23 @@ namespace KinectServer
         
         //Performs the ICP based pose refinement.
         private void refineWorker_DoWork(object sender, DoWorkEventArgs e)
-        {                      
+        {
             if (oServer.bAllCalibrated == false)
             {
                 SetStatusBarOnTimer("Not all of the devices are calibrated.", 5000);
                 return;
-            } 
+            }
 
             //Download a frame from each client.
-            List<List<float>> lAllFrameVertices = new List<List<float>>();
-            List<List<byte>> lAllFrameColors = new List<List<byte>>();
-            List<List<Body>> lAllFrameBody = new List<List<Body>>();
-            oServer.GetLatestFrame(lAllFrameColors, lAllFrameVertices, lAllFrameBody);
+            lock (lAllSensorVertices)
+            {
+                oServer.GetLatestFrame(ref lAllSensorColors, ref lAllSensorVertices);
+            }
 
             //Initialize containers for the poses.
             List<float[]> Rs = new List<float[]>();
             List<float[]> Ts = new List<float[]>();
-            for (int i = 0; i < lAllFrameVertices.Count; i++)
+            for (int i = 0; i < lAllSensorVertices.Count; i++)
             {
                 float[] tempR = new float[9];
                 float[] tempT = new float[3];
@@ -351,30 +357,30 @@ namespace KinectServer
 
             for (int refineIter = 0; refineIter < oSettings.nNumRefineIters; refineIter++)
             {
-                for (int i = 0; i < lAllFrameVertices.Count; i++)
+                for (int i = 0; i < lAllSensorVertices.Count; i++)
                 {
                     List<float> otherFramesVertices = new List<float>();
-                    for (int j = 0; j < lAllFrameVertices.Count; j++)
+                    for (int j = 0; j < lAllSensorVertices.Count; j++)
                     {
                         if (j == i)
                             continue;
-                        otherFramesVertices.AddRange(lAllFrameVertices[j]);
+                        otherFramesVertices.AddRange(lAllSensorVertices[j]);
                     }
 
                     float[] verts1 = otherFramesVertices.ToArray();
-                    float[] verts2 = lAllFrameVertices[i].ToArray();
+                    float[] verts2 = lAllSensorVertices[i].ToArray();
 
                     IntPtr pVerts1 = Marshal.AllocHGlobal(otherFramesVertices.Count * sizeof(float));
-                    IntPtr pVerts2 = Marshal.AllocHGlobal(lAllFrameVertices[i].Count * sizeof(float));
+                    IntPtr pVerts2 = Marshal.AllocHGlobal(lAllSensorVertices[i].Count * sizeof(float));
 
                     Marshal.Copy(verts1, 0, pVerts1, verts1.Length);
                     Marshal.Copy(verts2, 0, pVerts2, verts2.Length);
 
-                    ICP(pVerts1, pVerts2, otherFramesVertices.Count / 3, lAllFrameVertices[i].Count / 3, Rs[i], Ts[i], oSettings.nNumICPIterations);
+                    ICP(pVerts1, pVerts2, otherFramesVertices.Count / 3, lAllSensorVertices[i].Count / 3, Rs[i], Ts[i], oSettings.nNumICPIterations);
 
                     Marshal.Copy(pVerts2, verts2, 0, verts2.Length);
-                    lAllFrameVertices[i].Clear();
-                    lAllFrameVertices[i].AddRange(verts2);
+                    lAllSensorVertices[i].Clear();
+                    lAllSensorVertices[i].AddRange(verts2);
                 }
             }
 
@@ -409,7 +415,7 @@ namespace KinectServer
                         worldTransforms[i].R[j, k] = tempR[j, k];
                         cameraPoses[i].R[j, k] = tempR[j, k];
                     }
-                }                    
+                }
             }
 
             oServer.lWorldTransforms = worldTransforms;
@@ -514,7 +520,7 @@ namespace KinectServer
         }
 
         //Updates the ListBox contaning the connected clients, called by events inside KinectServer.
-        private void UpdateListView(List<KinectSocket> socketList)
+        private void UpdateListView(List<NativeLiveScanClient> socketList)
         {
             List<string> listBoxItems = new List<string>();
 

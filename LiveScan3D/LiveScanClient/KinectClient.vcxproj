@@ -26,6 +26,7 @@
     <ClInclude Include="..\include\LiveScanClient\iCapture.h" />
     <ClInclude Include="..\include\LiveScanClient\imageRenderer.h" />
     <ClInclude Include="..\include\LiveScanClient\iMarker.h" />
+    <ClInclude Include="..\include\LiveScanClient\liveScanClientWrapper.h" />
     <ClInclude Include="..\include\LiveScanClient\objectUtils.h" />
     <ClInclude Include="..\include\LiveScanClient\liveScanClient.h" />
     <ClInclude Include="..\include\LiveScanClient\liveScanClientApi.h" />
@@ -45,7 +46,9 @@
     <ClCompile Include="..\src\LiveScanClient\imageRenderer.cpp" />
     <ClCompile Include="..\src\LiveScanClient\iMarker.cpp" />
     <ClCompile Include="..\src\LiveScanClient\liveScanClient.cpp" />
-    <ClCompile Include="..\src\LiveScanClient\liveScanClientApi.cpp" />
+    <ClCompile Include="..\src\LiveScanClient\liveScanClientApi.cpp">
+      <PreprocessToFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</PreprocessToFile>
+    </ClCompile>
     <ClCompile Include="..\src\LiveScanClient\marker.cpp" />
     <ClCompile Include="..\src\LiveScanClient\utils.cpp" />
     <ClCompile Include="..\src\socketCS.cpp" />
@@ -73,7 +76,7 @@
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
@@ -145,13 +148,14 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>$(KINECTSDK20_DIR)\inc;$(SolutionDir)\include\LiveScanClient;$(SolutionDir)\include;$(ProjectDir)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_UNICODE;UNICODE;LIVESCANCLIENT_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(KINECTSDK20_DIR)\lib\x64;$(SolutionDir)lib</AdditionalLibraryDirectories>
       <AdditionalDependencies>opencv_world320d.lib;libzstd.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SubSystem>NotSet</SubSystem>
+      <ModuleDefinitionFile>LiveScanClient.def</ModuleDefinitionFile>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">

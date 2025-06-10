@@ -81,6 +81,7 @@ typedef struct Point3f
 	bool Invalid = false;
 } Point3f;
 
+#pragma pack(push, 1)
 typedef struct Point3s
 {
 	Point3s()
@@ -106,6 +107,7 @@ typedef struct Point3s
 	short Y;
 	short Z;
 } Point3s;
+#pragma pack(pop)
 
 typedef struct Point2f
 {
@@ -123,6 +125,7 @@ typedef struct Point2f
 	float Y;
 } Point2f;
 
+#pragma pack(push, 1)
 typedef struct RGB
 {
 	BYTE    rgbBlue;
@@ -130,6 +133,7 @@ typedef struct RGB
 	BYTE    rgbRed;
 	BYTE    rgbReserved;
 } RGB;
+#pragma pack(pop)
 
 Point3f RotatePoint(Point3f &point, std::vector<std::vector<float>> &R);
 Point3f InverseRotatePoint(Point3f &point, std::vector<std::vector<float>> &R);

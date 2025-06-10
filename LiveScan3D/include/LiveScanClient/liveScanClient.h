@@ -9,6 +9,7 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 
+#include "liveScanClientWrapper.h"
 #include "resource.h"
 #include "ImageRenderer.h"
 #include "SocketCS.h"
@@ -39,14 +40,16 @@ public:
     void StartMaster();
     void RequestSyncJackState();
     void RequestExit();
+
     std::function<void(const std::string&)> GetLogger();
 
-    bool m_bSocketThread;
+    bool isClientThreadRunning;
+
+    LiveScanClientWrapper* m_pWrapper = nullptr;
+    int m_nClientIndex = -1;
 
 private:
     std::ofstream m_logFile;
-
-    int m_index = 0;
 
     Calibration calibration;
 
@@ -62,7 +65,6 @@ private:
     float m_fFilterThreshold;
 
     atomic<bool> m_bCaptureFrame;
-    bool m_bConnected;
     bool m_bConfirmCaptured;
     bool m_bConfirmTempSyncState;
     bool m_bConfirmRestartAsMaster;
@@ -79,7 +81,6 @@ private:
 
     FrameFileWriterReader m_framesFileWriterReader;
 
-    SocketClient* m_pClientSocket;
     std::vector<float> m_vBounds;
 
     std::vector<Point3s> m_vLastFrameVertices;
@@ -90,10 +91,16 @@ private:
 
     void UpdateFrame();
 
-    void HandleSocket();
-    void SendFrame(vector<Point3s> vertices, vector<RGB> RGB, vector<Body> body);
+    void HandleClient();
+    void ConfirmCaptured();
+    void ConfirmCalibrated();
+    void SendLatestFrame(vector<Point3s>& vertices, vector<RGB>& RGB);
+    void SendStoredFrame(vector<Point3s>& vertices, vector<RGB>& RGB, bool noMoreFrames);
+    void ConfirmTempSyncState();
+    void ConfirmMasterRestart();
+    void SendDeviceSyncState();
 
-    void SocketThreadFunction();
+    void ClientThreadFunction();
     void ProcessFrame(Point3f* vertices, RGB* colorInDepth, vector<Body>& bodies, BYTE* bodyIndex);
     void SetupLogging(int clientIndex);
     void Log(const std::string& message);
