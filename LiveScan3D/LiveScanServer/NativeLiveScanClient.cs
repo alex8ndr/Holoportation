@@ -19,7 +19,7 @@ namespace KinectServer
          * Server to client (outbound) calls
          */
         [DllImport("LiveScanClient.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr CreateClient(int index, string ip);
+        private static extern IntPtr CreateClient(int index);
 
         [DllImport("LiveScanClient.dll", CallingConvention = CallingConvention.Cdecl)]
         private static extern void StartClient(IntPtr handle);
@@ -52,7 +52,7 @@ namespace KinectServer
         private static extern void ClearStoredFrames(IntPtr handle);
 
         [DllImport("LiveScanClient.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern void EnableTemporalSync(IntPtr handle, int syncOffset);
+        private static extern void EnableTemporalSync(IntPtr handle, int tempSyncState, int syncOffset);
 
         [DllImport("LiveScanClient.dll", CallingConvention = CallingConvention.Cdecl)]
         private static extern void DisableTemporalSync(IntPtr handle);
@@ -66,6 +66,9 @@ namespace KinectServer
         /*
          * Client to server (inbound) calls
          */
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        public delegate void SendSerialNumberCallback(int clientIndex, [MarshalAs(UnmanagedType.LPStr)] string serialNumber);
+
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         public delegate void ConfirmCapturedCallback(int clientIndex);
 
@@ -86,6 +89,9 @@ namespace KinectServer
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         public delegate void SendDeviceSyncStateCallback(int clientIndex, int tempSyncState);
+
+        [DllImport("LiveScanClient.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern void SetSendSerialNumberCallback(IntPtr handle, SendSerialNumberCallback cb);
 
         [DllImport("LiveScanClient.dll", CallingConvention = CallingConvention.Cdecl)]
         private static extern void SetConfirmCapturedCallback(IntPtr handle, ConfirmCapturedCallback cb);
@@ -109,6 +115,7 @@ namespace KinectServer
         private static extern void SetSendDeviceSyncStateCallback(IntPtr handle, SendDeviceSyncStateCallback callback);
 
         public int clientIndex;
+        public string serialNumber = "XXXXXXXXXXX";
         public bool bFrameCaptured = false;
         public bool bCalibrated = false;
         public bool bLatestFrameReceived = false;
@@ -137,6 +144,7 @@ namespace KinectServer
         public List<float> lFrameVerts = new List<float>();
 
         private IntPtr clientHandle;
+        private SendSerialNumberCallback sendSerialNumberCallback;
         private ConfirmCapturedCallback confirmCapturedCallback;
         private ConfirmCalibratedCallback confirmCalibratedCallback;
         private SendLatestFrameCallback sendLatestFrameCallback;
@@ -145,9 +153,9 @@ namespace KinectServer
         private ConfirmMasterRestartCallback confirmMasterRestartCallback;
         private SendDeviceSyncStateCallback sendDeviceSyncStateCallback;
 
-        public NativeLiveScanClient(int index, string ip)
+        public NativeLiveScanClient(int index)
         {
-            clientHandle = CreateClient(index, ip);
+            clientHandle = CreateClient(index);
             clientIndex = index;
             sSocketState = "[Client " + clientIndex.ToString() + "] Calibrated = false";
 
@@ -203,11 +211,11 @@ namespace KinectServer
 
         public void ClearStoredFrames() => ClearStoredFrames(clientHandle);
 
-        public void EnableTemporalSync(int syncOffset)
+        public void EnableTemporalSync(int tempSyncState, int syncOffset)
         {
             bSubStarted = false;
             currentClientTempSyncState = eTempSyncConfig.UNKNOWN;
-            EnableTemporalSync(clientHandle, syncOffset);
+            EnableTemporalSync(clientHandle, tempSyncState, syncOffset);
         }
 
         public void DisableTemporalSync()
@@ -220,6 +228,17 @@ namespace KinectServer
         public void StartMaster() => StartMaster(clientHandle);
 
         public void RequestSyncJackState() => RequestSyncJackState(clientHandle);
+
+        public void SetSendSerialNumberCallback()
+        {
+            sendSerialNumberCallback = new SendSerialNumberCallback((int index, string serial) =>
+            {
+                serialNumber = serial;
+                UpdateSocketState();
+            });
+
+            SetSendSerialNumberCallback(clientHandle, sendSerialNumberCallback);
+        }
 
         public void SetConfirmCapturedCallback(Action<int> callback)
         {
@@ -317,10 +336,10 @@ namespace KinectServer
                switch (state)
                {
                     case 0:
-                        config = eTempSyncConfig.SUBORDINATE;
+                        config = eTempSyncConfig.MASTER;
                         break;
                     case 1:
-                        config = eTempSyncConfig.MASTER;
+                        config = eTempSyncConfig.SUBORDINATE;
                         break;
                     case 2:
                         config = eTempSyncConfig.STANDALONE;
@@ -330,7 +349,7 @@ namespace KinectServer
                         break;
                }
 
-                callback(index, config);
+               callback(index, config);
             });
 
             SetConfirmTempSyncStateCallback(clientHandle, confirmTempSyncStateCallback);
@@ -344,7 +363,7 @@ namespace KinectServer
                 callback(index);
             });
 
-            SetConfirmTempSyncStateCallback(clientHandle, confirmTempSyncStateCallback);
+            SetConfirmMasterRestartCallback(clientHandle, confirmMasterRestartCallback);
         }
 
         public void SetSendDeviceSyncStateCallback(Action<int> callback)
@@ -385,11 +404,14 @@ namespace KinectServer
                 case eTempSyncConfig.SUBORDINATE:
                     tempSyncMessage = "[SUBORDINATE]";
                     break;
+                case eTempSyncConfig.STANDALONE:
+                    tempSyncMessage = "[STANDALONE]";
+                    break;
                 default:
                     break;
             }
 
-            sSocketState = "[Client " + clientIndex.ToString() + "] Calibrated = " + bCalibrated + " " + tempSyncMessage;
+            sSocketState = "[Client " + clientIndex.ToString() + " ( " + serialNumber +  ")] Calibrated = " + bCalibrated + " " + tempSyncMessage;
         }
     }
 }

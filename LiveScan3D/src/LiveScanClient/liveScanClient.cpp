@@ -111,7 +111,7 @@ LiveScanClient::~LiveScanClient()
 	}
 }
 
-void LiveScanClient::Run(std::wstring serverAddress)
+void LiveScanClient::Run()
 {
 	SetupLogging(m_nClientIndex);
 
@@ -121,6 +121,7 @@ void LiveScanClient::Run(std::wstring serverAddress)
 	bool res = pCapture->Initialize(Standalone, 0);
 	if (res)
 	{
+		SendSerialNumber();
 		calibration.LoadCalibration(pCapture->serialNumber);
 		m_pCameraSpaceCoordinates = new Point3f[pCapture->nColorFrameWidth * pCapture->nColorFrameHeight];
 		pCapture->SetExposureState(true, 0);
@@ -254,16 +255,16 @@ void LiveScanClient::ClearStoredFrames()
 	m_framesFileWriterReader.closeFileIfOpened();
 }
 
-void LiveScanClient::EnableTemporalSync(int syncOffset)
+void LiveScanClient::EnableTemporalSync(int tempSyncState, int syncOffset)
 {
 	//Determine if this device is a subordinate, master, or standalone
-	int jackState = pCapture->GetSyncJackState();
+	//int jackState = pCapture->GetSyncJackState();
 
 	bool res = false;
 
-	switch (jackState)
+	switch (tempSyncState)
 	{
-	case -1:
+	case 1:
 		currentTempSyncState = SUBORDINATE;
 
 		//Restart this device as Subordinate, with a unique syncOffset (send by the server)
@@ -301,7 +302,7 @@ void LiveScanClient::EnableTemporalSync(int syncOffset)
 		m_bConfirmTempSyncState = true;
 		break;
 
-	case 1://Device is Standalone
+	case 2://Device is Standalone
 		currentTempSyncState = STANDALONE;
 
 		//Restart this device as Standalone
@@ -374,6 +375,12 @@ void LiveScanClient::RequestSyncJackState()
 	SendDeviceSyncState();
 }
 
+void LiveScanClient::SendSerialNumber()
+{
+	if (m_pWrapper && m_pWrapper->sendSerialNumberCallback)
+		m_pWrapper->sendSerialNumberCallback(m_nClientIndex, pCapture->serialNumber.c_str());
+}
+
 void LiveScanClient::ConfirmCaptured()
 {
 	if (m_pWrapper && m_pWrapper->confirmCapturedCallback)
@@ -438,12 +445,22 @@ void LiveScanClient::ConfirmTempSyncState()
 {
 	if (m_pWrapper && m_pWrapper->confirmTempSyncStateCallback)
 	{
+		string tempSyncState = "";
 		int syncState = 2; // default: STANDALONE
 		switch (currentTempSyncState)
 		{
-		case SUBORDINATE: syncState = 0; break;
-		case MASTER:      syncState = 1; break;
-		case STANDALONE:  syncState = 2; break;
+		case SUBORDINATE: 
+			syncState = 1; 
+			tempSyncState = "subordinate";
+			break;
+		case MASTER:      
+			syncState = 0; 
+			tempSyncState = "master";
+			break;
+		case STANDALONE:  
+			syncState = 2; 
+			tempSyncState = "standalone";
+			break;
 		}
 
 		m_pWrapper->confirmTempSyncStateCallback(m_nClientIndex, syncState);
@@ -472,9 +489,10 @@ void LiveScanClient::SendDeviceSyncState()
 		int syncState = 2; // default: STANDALONE
 		switch (deviceSyncState)
 		{
-		case SUBORDINATE: syncState = 0; break;
-		case MASTER:      syncState = 1; break;
+		case MASTER: syncState = 0; break;
+		case SUBORDINATE:      syncState = 1; break;
 		case STANDALONE:  syncState = 2; break;
+		default: syncState = 2; break;
 		}
 
 		m_pWrapper->sendDeviceSyncStateCallback(m_nClientIndex, syncState);

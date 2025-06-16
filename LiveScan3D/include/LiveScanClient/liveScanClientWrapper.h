@@ -10,6 +10,7 @@
 class LiveScanClient;
 
 // Typedefs for the callback signatures
+typedef void(*SendSerialNumberCallback)(int clientIndex, const char* serialNumber);
 typedef void(*ConfirmCapturedCallback)(int clientIndex);
 typedef void(*ConfirmCalibratedCallback)(int clientIndex, int markerId, const float* R, const float* t);
 typedef void(*SendLatestFrameCallback)(int clientIndex, const Point3s* vertices, const RGB* colors, int count);
@@ -21,8 +22,8 @@ typedef void(*SendDeviceSyncStateCallback)(int clientIndex, int tempSyncState);
 struct LiveScanClientWrapper {
 	std::unique_ptr<LiveScanClient> client;
 	std::thread thread;
-	std::wstring serverIP;
 
+	SendSerialNumberCallback sendSerialNumberCallback = nullptr;
 	ConfirmCapturedCallback confirmCapturedCallback = nullptr;
 	ConfirmCalibratedCallback confirmCalibratedCallback = nullptr;
 	SendLatestFrameCallback sendLatestFrameCallback = nullptr;

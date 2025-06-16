@@ -48,10 +48,10 @@
             // 
             // btCalibrate
             // 
-            this.btCalibrate.Location = new System.Drawing.Point(13, 83);
-            this.btCalibrate.Margin = new System.Windows.Forms.Padding(4);
+            this.btCalibrate.Location = new System.Drawing.Point(15, 104);
+            this.btCalibrate.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
             this.btCalibrate.Name = "btCalibrate";
-            this.btCalibrate.Size = new System.Drawing.Size(127, 28);
+            this.btCalibrate.Size = new System.Drawing.Size(143, 35);
             this.btCalibrate.TabIndex = 2;
             this.btCalibrate.Text = "Calibrate";
             this.btCalibrate.UseVisualStyleBackColor = true;
@@ -59,10 +59,10 @@
             // 
             // btRecord
             // 
-            this.btRecord.Location = new System.Drawing.Point(340, 119);
-            this.btRecord.Margin = new System.Windows.Forms.Padding(4);
+            this.btRecord.Location = new System.Drawing.Point(493, 149);
+            this.btRecord.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
             this.btRecord.Name = "btRecord";
-            this.btRecord.Size = new System.Drawing.Size(127, 28);
+            this.btRecord.Size = new System.Drawing.Size(143, 35);
             this.btRecord.TabIndex = 4;
             this.btRecord.Text = "Start recording";
             this.btRecord.UseVisualStyleBackColor = true;
@@ -72,11 +72,11 @@
             // 
             this.lClientListBox.FormattingEnabled = true;
             this.lClientListBox.HorizontalScrollbar = true;
-            this.lClientListBox.ItemHeight = 16;
-            this.lClientListBox.Location = new System.Drawing.Point(13, 13);
-            this.lClientListBox.Margin = new System.Windows.Forms.Padding(4);
+            this.lClientListBox.ItemHeight = 20;
+            this.lClientListBox.Location = new System.Drawing.Point(15, 16);
+            this.lClientListBox.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
             this.lClientListBox.Name = "lClientListBox";
-            this.lClientListBox.Size = new System.Drawing.Size(307, 52);
+            this.lClientListBox.Size = new System.Drawing.Size(470, 84);
             this.lClientListBox.TabIndex = 5;
             this.lClientListBox.SelectedIndexChanged += new System.EventHandler(this.lClientListBox_SelectedIndexChanged);
             // 
@@ -85,17 +85,17 @@
             this.statusStrip1.ImageScalingSize = new System.Drawing.Size(20, 20);
             this.statusStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.statusLabel});
-            this.statusStrip1.Location = new System.Drawing.Point(0, 171);
+            this.statusStrip1.Location = new System.Drawing.Point(0, 219);
             this.statusStrip1.Name = "statusStrip1";
-            this.statusStrip1.Padding = new System.Windows.Forms.Padding(1, 0, 19, 0);
-            this.statusStrip1.Size = new System.Drawing.Size(483, 22);
+            this.statusStrip1.Padding = new System.Windows.Forms.Padding(1, 0, 21, 0);
+            this.statusStrip1.Size = new System.Drawing.Size(648, 22);
             this.statusStrip1.TabIndex = 6;
             this.statusStrip1.Text = "statusStrip1";
             // 
             // statusLabel
             // 
             this.statusLabel.Name = "statusLabel";
-            this.statusLabel.Size = new System.Drawing.Size(0, 16);
+            this.statusLabel.Size = new System.Drawing.Size(0, 15);
             // 
             // recordingWorker
             // 
@@ -105,20 +105,20 @@
             // 
             // txtSeqName
             // 
-            this.txtSeqName.Location = new System.Drawing.Point(343, 89);
-            this.txtSeqName.Margin = new System.Windows.Forms.Padding(4);
+            this.txtSeqName.Location = new System.Drawing.Point(497, 111);
+            this.txtSeqName.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
             this.txtSeqName.MaxLength = 40;
             this.txtSeqName.Name = "txtSeqName";
-            this.txtSeqName.Size = new System.Drawing.Size(123, 22);
+            this.txtSeqName.Size = new System.Drawing.Size(138, 26);
             this.txtSeqName.TabIndex = 7;
             this.txtSeqName.Text = "noname";
             // 
             // btRefineCalib
             // 
-            this.btRefineCalib.Location = new System.Drawing.Point(13, 119);
-            this.btRefineCalib.Margin = new System.Windows.Forms.Padding(4);
+            this.btRefineCalib.Location = new System.Drawing.Point(15, 149);
+            this.btRefineCalib.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
             this.btRefineCalib.Name = "btRefineCalib";
-            this.btRefineCalib.Size = new System.Drawing.Size(127, 28);
+            this.btRefineCalib.Size = new System.Drawing.Size(143, 35);
             this.btRefineCalib.TabIndex = 11;
             this.btRefineCalib.Text = "Refine calib";
             this.btRefineCalib.UseVisualStyleBackColor = true;
@@ -142,10 +142,10 @@
             // 
             // btShowLive
             // 
-            this.btShowLive.Location = new System.Drawing.Point(157, 83);
-            this.btShowLive.Margin = new System.Windows.Forms.Padding(4);
+            this.btShowLive.Location = new System.Drawing.Point(177, 104);
+            this.btShowLive.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
             this.btShowLive.Name = "btShowLive";
-            this.btShowLive.Size = new System.Drawing.Size(163, 64);
+            this.btShowLive.Size = new System.Drawing.Size(308, 80);
             this.btShowLive.TabIndex = 12;
             this.btShowLive.Text = "Show live";
             this.btShowLive.UseVisualStyleBackColor = true;
@@ -153,10 +153,10 @@
             // 
             // btSettings
             // 
-            this.btSettings.Location = new System.Drawing.Point(340, 13);
-            this.btSettings.Margin = new System.Windows.Forms.Padding(4);
+            this.btSettings.Location = new System.Drawing.Point(493, 16);
+            this.btSettings.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
             this.btSettings.Name = "btSettings";
-            this.btSettings.Size = new System.Drawing.Size(127, 28);
+            this.btSettings.Size = new System.Drawing.Size(143, 35);
             this.btSettings.TabIndex = 13;
             this.btSettings.Text = "Settings";
             this.btSettings.UseVisualStyleBackColor = true;
@@ -170,19 +170,19 @@
             // lbSeqName
             // 
             this.lbSeqName.AutoSize = true;
-            this.lbSeqName.Location = new System.Drawing.Point(349, 66);
+            this.lbSeqName.Location = new System.Drawing.Point(504, 82);
             this.lbSeqName.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             this.lbSeqName.Name = "lbSeqName";
-            this.lbSeqName.Size = new System.Drawing.Size(109, 16);
+            this.lbSeqName.Size = new System.Drawing.Size(130, 20);
             this.lbSeqName.TabIndex = 14;
             this.lbSeqName.Text = "Sequence name:";
             this.lbSeqName.Click += new System.EventHandler(this.lbSeqName_Click);
             // 
             // MainWindowForm
             // 
-            this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
+            this.AutoScaleDimensions = new System.Drawing.SizeF(9F, 20F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(483, 193);
+            this.ClientSize = new System.Drawing.Size(648, 241);
             this.Controls.Add(this.lbSeqName);
             this.Controls.Add(this.btSettings);
             this.Controls.Add(this.btShowLive);
@@ -193,7 +193,7 @@
             this.Controls.Add(this.btRecord);
             this.Controls.Add(this.btCalibrate);
             this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedSingle;
-            this.Margin = new System.Windows.Forms.Padding(4);
+            this.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
             this.MaximizeBox = false;
             this.Name = "MainWindowForm";
             this.Text = "LiveScanServer";

@@ -27,7 +27,7 @@ public:
     LiveScanClient(int index);
     ~LiveScanClient();
 
-    void Run(std::wstring serverAddress = L"");
+    void Run();
     void StartFrameCapture();
     void Calibrate();
     void SetSettings(const KinectSettings& settings);
@@ -35,7 +35,7 @@ public:
     void RequestLastFrame();
     void ReceiveCalibration(const AffineTransform& transform);
     void ClearStoredFrames();
-    void EnableTemporalSync(int syncOffset);
+    void EnableTemporalSync(int tempSyncState, int syncOffset);
     void DisableTemporalSync();
     void StartMaster();
     void RequestSyncJackState();
@@ -92,6 +92,7 @@ private:
     void UpdateFrame();
 
     void HandleClient();
+    void SendSerialNumber();
     void ConfirmCaptured();
     void ConfirmCalibrated();
     void SendLatestFrame();

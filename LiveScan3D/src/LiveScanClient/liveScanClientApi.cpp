@@ -9,13 +9,9 @@
 /*
 * Server to client (inbound) calls
 */
-LiveScanClientHandle CreateClient(int index, const char* serverIP)
+LiveScanClientHandle CreateClient(int index)
 {
 	auto* wrapper = new LiveScanClientWrapper();
-
-	// Convert const char* to std::wstring
-	std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
-	wrapper->serverIP = converter.from_bytes(serverIP);
 
 	wrapper->client = std::make_unique<LiveScanClient>(index);
 	wrapper->client->m_pWrapper = wrapper;
@@ -28,7 +24,7 @@ void StartClient(LiveScanClientHandle handle)
 	if (!wrapper) return;
 
 	wrapper->thread = std::thread([wrapper]() {
-		wrapper->client->Run(wrapper->serverIP);
+		wrapper->client->Run();
 		});
 }
 
@@ -108,12 +104,12 @@ void ClearStoredFrames(LiveScanClientHandle handle)
 	wrapper->client->ClearStoredFrames();
 }
 
-void EnableTemporalSync(LiveScanClientHandle handle, int syncOffset)
+void EnableTemporalSync(LiveScanClientHandle handle, int tempSyncState, int syncOffset)
 {
 	auto* wrapper = static_cast<LiveScanClientWrapper*>(handle);
 	if (!wrapper) return;
 
-	wrapper->client->EnableTemporalSync(syncOffset);
+	wrapper->client->EnableTemporalSync(tempSyncState, syncOffset);
 }
 
 void DisableTemporalSync(LiveScanClientHandle handle)
@@ -143,6 +139,13 @@ void RequestSyncJackState(LiveScanClientHandle handle)
 /*
 * Client to server (outbound) calls
 */
+void SetSendSerialNumberCallback(LiveScanClientHandle handle, SendSerialNumberCallback cb)
+{
+	auto* wrapper = static_cast<LiveScanClientWrapper*>(handle);
+	if (wrapper)
+		wrapper->sendSerialNumberCallback = cb;
+}
+
 void SetConfirmCapturedCallback(LiveScanClientHandle handle, ConfirmCapturedCallback cb)
 {
 	auto* wrapper = static_cast<LiveScanClientWrapper*>(handle);

@@ -167,10 +167,11 @@ namespace KinectServer
             // Start multiple instances of LiveScanClient
             for (int i = 0; i < count; i++)
             {
-                var client = new NativeLiveScanClient(i, "127.0.0.1");
+                var client = new NativeLiveScanClient(i);
                 liveScanClients.Add(client);
 
                 // Set callbacks so the client can call server methods directly
+                client.SetSendSerialNumberCallback();
                 client.SetConfirmCapturedCallback(OnConfirmCaptured);
                 client.SetConfirmCalibratedCallback(OnConfirmCalibrated);
                 client.SetSendLatestFrameCallback();
@@ -178,7 +179,6 @@ namespace KinectServer
                 client.SetConfirmTempSyncStateCallback(OnConfirmTempSyncState);
                 client.SetConfirmMasterRestartCallback(OnConfirmMasterRestart);
                 client.SetSendDeviceSyncStateCallback(OnReceiveDeviceSyncState);
-
                 client.Start();
                 
                 // Send settings
@@ -261,21 +261,45 @@ namespace KinectServer
         }
 
         /// <summary>
-        /// Request the device Sync state, so that we know which Device is Master and which are Subordinates before starting them
+        /// Enable temporal sync by assigning roles to each connected device
         /// </summary>
-        public void RequestDeviceSyncState()
+        public void EnableTemporalSync()
         {
             lock (oClientLock)
             {
-                foreach (var client in liveScanClients)
+                allDevicesInitialized = false;
+                bWaitForSubToStart = true;
+
+                // Sort clients by their serial numbers (ascending)
+                List<NativeLiveScanClient> sortedClients = liveScanClients
+                    .Where(c => !string.IsNullOrEmpty(c.serialNumber))
+                    .OrderBy(c => c.serialNumber, StringComparer.Ordinal)
+                    .ToList();
+
+                if (sortedClients.Count == 0)
+                    return;
+
+                // First client becomes MASTER
+                NativeLiveScanClient masterClient = sortedClients[0];
+                masterClient.EnableTemporalSync((int)eTempSyncConfig.MASTER, 0);
+
+                // All others become SUBORDINATE
+                for (int i = 1; i < sortedClients.Count; i++)
                 {
-                    client.RequestSyncJackState();
+                    sortedClients[i].EnableTemporalSync((int)eTempSyncConfig.SUBORDINATE, i);
+                }
+
+                // Any clients not in sortedClients can be disabled or set to STANDALONE
+                var standaloneClients = liveScanClients.Except(sortedClients);
+                foreach (var c in standaloneClients)
+                {
+                    c.EnableTemporalSync((int)eTempSyncConfig.STANDALONE, 0);
                 }
             }
         }
 
         /// <summary>
-        /// When a client has send its Device Sync State, we try to Set the Client Sync State
+        /// When a client has send its Device Sync State, we check if we have the right number of each sync mode
         /// </summary>
         public void SendTemporalSyncData()
         {
@@ -312,18 +336,6 @@ namespace KinectServer
                     fSettingsForm?.ActivateTempSyncEnableButton();
                     return;
                 }
-                
-
-                allDevicesInitialized = false;
-
-                byte syncOffSetCounter = 0;
-
-                foreach (var client in liveScanClients)
-                {
-                    client.EnableTemporalSync(syncOffSetCounter);
-                }
-
-                bWaitForSubToStart = true;
             }
         }
 
@@ -393,7 +405,7 @@ namespace KinectServer
                 {
                     foreach (var client in liveScanClients)
                     {
-                        if(client.currentDeviceTempSyncState == eTempSyncConfig.MASTER)
+                        if(client.currentClientTempSyncState == eTempSyncConfig.MASTER)
                         {
                             client.StartMaster();
                             return;
@@ -620,6 +632,7 @@ namespace KinectServer
 
         private void OnReceiveDeviceSyncState(int clientIndex)
         {
+            NativeLiveScanClient client = liveScanClients[(clientIndex)];
             SendTemporalSyncData();
         }
     }

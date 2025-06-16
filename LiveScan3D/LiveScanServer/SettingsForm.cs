@@ -358,7 +358,7 @@ namespace KinectServer
         {
             if (oServer.GetAllDevicesInitialized() && oServer.nClientCount > 1)
             {
-                oServer.RequestDeviceSyncState();
+                oServer.EnableTemporalSync();
                 btSyncEnable.Enabled = false;
                 btSyncDisable.Enabled = true;
 

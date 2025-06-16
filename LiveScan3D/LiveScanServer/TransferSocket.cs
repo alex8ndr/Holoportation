@@ -12,7 +12,7 @@ namespace KinectServer
         // Parameters used to find the scale (precision level of the point cloud)
         private const short MAX_SCALE = 2500;
         private const short MIN_SCALE = 400;
-        private const double SCALE_FN_OFFSET = 7400;
+        private const double SCALE_FN_OFFSET = 7300;
         private const double SCALE_FN_FACTOR = 580;
 
         public TransferSocket(TcpClient clientSocket)

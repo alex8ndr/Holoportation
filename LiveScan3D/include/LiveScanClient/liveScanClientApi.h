@@ -13,7 +13,7 @@ extern "C" {
 	typedef void* LiveScanClientHandle;
 
 	// Server to client (inbound) calls
-	LIVESCAN_API LiveScanClientHandle CreateClient(int index, const char* serverIP);
+	LIVESCAN_API LiveScanClientHandle CreateClient(int index);
 	LIVESCAN_API void StartClient(LiveScanClientHandle handle);
 	LIVESCAN_API void StopClient(LiveScanClientHandle handle);
 	LIVESCAN_API void DestroyClient(LiveScanClientHandle handle);
@@ -25,12 +25,13 @@ extern "C" {
 	LIVESCAN_API void RequestLastFrame(LiveScanClientHandle handle);
 	LIVESCAN_API void ReceiveCalibration(LiveScanClientHandle handle, const AffineTransform* transform);
 	LIVESCAN_API void ClearStoredFrames(LiveScanClientHandle handle);
-	LIVESCAN_API void EnableTemporalSync(LiveScanClientHandle handle, int syncOffset);
+	LIVESCAN_API void EnableTemporalSync(LiveScanClientHandle handle, int tempSyncState, int syncOffset);
 	LIVESCAN_API void DisableTemporalSync(LiveScanClientHandle handle);
 	LIVESCAN_API void StartMaster(LiveScanClientHandle handle);
 	LIVESCAN_API void RequestSyncJackState(LiveScanClientHandle handle);
 
 	// Client to server (outbound) calls
+	LIVESCAN_API void SetSendSerialNumberCallback(LiveScanClientHandle handle, SendSerialNumberCallback cb);
 	LIVESCAN_API void SetConfirmCapturedCallback(LiveScanClientHandle handle, ConfirmCapturedCallback cb);
 	LIVESCAN_API void SetConfirmCalibratedCallback(LiveScanClientHandle handle, ConfirmCalibratedCallback cb);
 	LIVESCAN_API void SetSendLatestFrameCallback(LiveScanClientHandle handle, SendLatestFrameCallback cb);

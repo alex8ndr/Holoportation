@@ -136,8 +136,8 @@ bool AzureKinectCapture::Initialize(SYNC_STATE state, int syncOffsetMultiplier)
     k4a_device_configuration_t config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
     config.camera_fps = K4A_FRAMES_PER_SECOND_30;
     config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
-    config.color_resolution = K4A_COLOR_RESOLUTION_720P;
-    config.depth_mode = K4A_DEPTH_MODE_NFOV_UNBINNED;
+    config.color_resolution = K4A_COLOR_RESOLUTION_1080P;
+    config.depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
     config.synchronized_images_only = true;
 
     if (state == Master)
@@ -249,10 +249,23 @@ bool AzureKinectCapture::Initialize(SYNC_STATE state, int syncOffsetMultiplier)
         } while (!bTemp);
     }
 
-    size_t serialNoSize;
+    size_t serialNoSize = 0;
     k4a_device_get_serialnum(kinectSensor, NULL, &serialNoSize);
-    serialNumber = std::string(serialNoSize, '\0');
-    k4a_device_get_serialnum(kinectSensor, (char*)serialNumber.c_str(), &serialNoSize);
+
+    std::vector<char> serialBuffer(serialNoSize);
+
+    // Now retrieve the actual serial number
+    if (K4A_SUCCEEDED(k4a_device_get_serialnum(kinectSensor, serialBuffer.data(), &serialNoSize)))
+    {
+        serialNumber = std::string(serialBuffer.data());
+
+        if (m_logger) m_logger("Serial number is: " + serialNumber);
+    }
+    else
+    {
+        if (m_logger) m_logger("Failed to get serial number");
+    }
+
 
     deviceIDForRestart = deviceIdx;
     restartAttempts = 0;
