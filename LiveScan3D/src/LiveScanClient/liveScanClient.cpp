@@ -155,7 +155,6 @@ void LiveScanClient::UpdateFrame()
 		return;
 	}
 
-
 	{
 		std::lock_guard<std::mutex> lock(clientThreadMutex);
 		ProcessFrame();
@@ -549,6 +548,52 @@ void LiveScanClient::ProcessFrame()
 
 		AllVertices[vertexIndex] = temp;
 		goodVerticesCount++;
+	}
+
+	// Remove sparse voxel artifacts
+	const float voxelSize = 0.006f;
+	const int minPointsPerVoxel = 20;
+
+	// Count points per voxel
+	std::map<uint64_t, int> voxelCounts;
+	auto HashVoxel = [](int x, int y, int z) -> uint64_t {
+		return (static_cast<uint64_t>(x) & 0x1FFFFF) << 42 |
+			(static_cast<uint64_t>(y) & 0x1FFFFF) << 21 |
+			(static_cast<uint64_t>(z) & 0x1FFFFF);
+		};
+
+	vector<uint64_t> vertexVoxelKeys(nVertices);
+	for (unsigned int i = 0; i < AllVertices.size(); ++i)
+	{
+		Point3f& pt = AllVertices[i];
+		if (!pt.Invalid)
+		{
+			int vx = static_cast<int>(floor(pt.X / voxelSize));
+			int vy = static_cast<int>(floor(pt.Y / voxelSize));
+			int vz = static_cast<int>(floor(pt.Z / voxelSize));
+			uint64_t key = HashVoxel(vx, vy, vz);
+			vertexVoxelKeys[i] = key;
+			voxelCounts[key]++;
+		}
+		else
+		{
+			vertexVoxelKeys[i] = 0; // placeholder
+		}
+	}
+
+	int filteredCount = 0;
+
+	// Mark isolated points as invalid
+	for (unsigned int i = 0; i < AllVertices.size(); ++i)
+	{
+		if (!AllVertices[i].Invalid)
+		{
+			if (voxelCounts[vertexVoxelKeys[i]] < minPointsPerVoxel)
+			{
+				AllVertices[i] = invalidPoint;
+				filteredCount++;
+			}
+		}
 	}
 
 	vector<Point3f> goodVertices(goodVerticesCount);
