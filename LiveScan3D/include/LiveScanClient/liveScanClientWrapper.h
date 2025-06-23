@@ -17,7 +17,6 @@ typedef void(*SendLatestFrameCallback)(int clientIndex, const Point3s* vertices,
 typedef void(*SendStoredFrameCallback)(int clientIndex, const Point3s* vertices, const RGB* colors, int count, bool noMoreFrames);
 typedef void(*ConfirmTempSyncStateCallback)(int clientIndex, int tempSyncState);
 typedef void(*ConfirmMasterRestartCallback)(int clientIndex);
-typedef void(*SendDeviceSyncStateCallback)(int clientIndex, int tempSyncState);
 
 struct LiveScanClientWrapper {
 	std::unique_ptr<LiveScanClient> client;
@@ -30,5 +29,4 @@ struct LiveScanClientWrapper {
 	SendStoredFrameCallback sendStoredFrameCallback = nullptr;
 	ConfirmTempSyncStateCallback confirmTempSyncStateCallback = nullptr;
 	ConfirmMasterRestartCallback confirmMasterRestartCallback = nullptr;
-	SendDeviceSyncStateCallback sendDeviceSyncStateCallback = nullptr;
 };

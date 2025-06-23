@@ -15,6 +15,7 @@
 #pragma once
 
 #include "utils.h"
+#include "libobsensor/ObSensor.hpp"
 #include <functional>
 
 struct Joint
@@ -44,11 +45,6 @@ public:
 	virtual bool Initialize(SYNC_STATE state, int syncOffset) = 0;
 	virtual bool AcquireFrame() = 0;
 	virtual bool Close() = 0;
-	virtual void MapDepthFrameToCameraSpace(Point3f *pCameraSpacePoints) = 0;
-	virtual void MapColorFrameToCameraSpace(Point3f *pCameraSpacePoints) = 0;
-	virtual void MapDepthFrameToColorSpace(UINT16 *pColorSpacePoints) = 0;
-	virtual void MapColorFrameToDepthSpace(RGB *pDepthSpacePoints) = 0;
-	virtual SYNC_STATE GetSyncJackState() = 0;
 	virtual uint64_t GetTimeStamp() = 0;
 	virtual int GetDeviceIndex() = 0;
 	virtual void SetExposureState(bool enableAutoExposure, int exposureStep) = 0;
@@ -63,8 +59,8 @@ public:
 	BYTE *pBodyIndex;
 	RGB *pColorRGBX;
 	std::vector<Body> vBodies;
-
-
+	std::vector<Point3f> lastFrameVertices;
+	std::vector<RGB> lastFrameRGB;
 
 	std::string serialNumber;
 };

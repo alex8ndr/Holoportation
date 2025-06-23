@@ -128,14 +128,6 @@ void StartMaster(LiveScanClientHandle handle)
 	wrapper->client->StartMaster();
 }
 
-void RequestSyncJackState(LiveScanClientHandle handle)
-{
-	auto* wrapper = static_cast<LiveScanClientWrapper*>(handle);
-	if (!wrapper) return;
-
-	wrapper->client->RequestSyncJackState();
-}
-
 /*
 * Client to server (outbound) calls
 */
@@ -186,11 +178,4 @@ void SetConfirmMasterRestartCallback(LiveScanClientHandle handle, ConfirmMasterR
 	auto* wrapper = static_cast<LiveScanClientWrapper*>(handle);
 	if (wrapper)
 		wrapper->confirmMasterRestartCallback = cb;
-}
-
-void SetSendDeviceSyncStateCallback(LiveScanClientHandle handle, SendDeviceSyncStateCallback cb)
-{
-	auto* wrapper = static_cast<LiveScanClientWrapper*>(handle);
-	if (wrapper)
-		wrapper->sendDeviceSyncStateCallback = cb;
 }

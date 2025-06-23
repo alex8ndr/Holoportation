@@ -430,9 +430,9 @@ namespace KinectServer
 
                         // Send the changed exposure to the devices
 
-                        //Clamp Exposure Step between -11 and 1
+                        //Clamp Exposure Step between 1 and 300
                         int exposureStep = trManualExposure.Value;
-                        int exposureStepClamped = exposureStep < -11 ? -11 : exposureStep > 1 ? 1 : exposureStep;
+                        int exposureStepClamped = exposureStep < 1 ? 1 : exposureStep > 300 ? 300 : exposureStep;
                         oSettings.nExposureStep = exposureStepClamped;
                         UpdateClients();
 

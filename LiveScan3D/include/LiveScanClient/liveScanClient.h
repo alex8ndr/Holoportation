@@ -85,7 +85,6 @@ private:
 
     std::vector<Point3s> m_vLastFrameVertices;
     std::vector<RGB> m_vLastFrameRGB;
-    std::vector<Body> m_vLastFrameBody;
 
     Point3f* m_pCameraSpaceCoordinates;
 

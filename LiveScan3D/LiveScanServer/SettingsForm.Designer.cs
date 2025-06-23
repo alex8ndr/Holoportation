@@ -190,12 +190,12 @@
             this.trManualExposure.Enabled = false;
             this.trManualExposure.LargeChange = 1;
             this.trManualExposure.Location = new System.Drawing.Point(6, 62);
-            this.trManualExposure.Maximum = -5;
-            this.trManualExposure.Minimum = -11;
+            this.trManualExposure.Maximum = 300;
+            this.trManualExposure.Minimum = 1;
             this.trManualExposure.Name = "trManualExposure";
             this.trManualExposure.Size = new System.Drawing.Size(237, 45);
             this.trManualExposure.TabIndex = 5;
-            this.trManualExposure.Value = -8;
+            this.trManualExposure.Value = 200;
             this.trManualExposure.Scroll += new System.EventHandler(this.trManualExposure_Scroll);
             // 
             // grTempSync

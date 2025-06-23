@@ -38,8 +38,14 @@ namespace KinectServer
 {
     public partial class MainWindowForm : Form
     {
-        [DllImport("k4a.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern uint k4a_device_get_installed_count();
+        [DllImport("OrbbecSDK.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr ob_create_context();
+
+        [DllImport("OrbbecSDK.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr ob_query_device_list(IntPtr ctx);
+
+        [DllImport("OrbbecSDK.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern UIntPtr ob_device_list_device_count(IntPtr devList);
 
         [DllImport("ICP.dll")]
         static extern float ICP(IntPtr verts1, IntPtr verts2, int nVerts1, int nVerts2, float[] R, float[] t, int maxIter = 200);
@@ -111,7 +117,9 @@ namespace KinectServer
             bServerRunning = true;
             //btStart.Text = "Stop server";
 
-            uint count = k4a_device_get_installed_count();
+            IntPtr ctx = ob_create_context();
+            IntPtr devList = ob_query_device_list(ctx);
+            uint count = ob_device_list_device_count(devList).ToUInt32();
 
             oServer.LaunchClients(count);
         }

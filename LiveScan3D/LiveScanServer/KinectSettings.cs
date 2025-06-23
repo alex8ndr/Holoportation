@@ -47,7 +47,7 @@ namespace KinectServer
 
         public bool bAutoExposureEnabled = true;
 
-        public int nExposureStep = -8;
+        public int nExposureStep = 200;
 
         public KinectSettings()
         {

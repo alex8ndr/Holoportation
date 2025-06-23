@@ -60,9 +60,6 @@ namespace KinectServer
         [DllImport("LiveScanClient.dll", CallingConvention = CallingConvention.Cdecl)]
         private static extern void StartMaster(IntPtr handle);
 
-        [DllImport("LiveScanClient.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern void RequestSyncJackState(IntPtr handle);
-
         /*
          * Client to server (inbound) calls
          */
@@ -111,9 +108,6 @@ namespace KinectServer
         [DllImport("LiveScanClient.dll", CallingConvention = CallingConvention.Cdecl)]
         private static extern void SetConfirmMasterRestartCallback(IntPtr handle, ConfirmMasterRestartCallback callback);
 
-        [DllImport("LiveScanClient.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern void SetSendDeviceSyncStateCallback(IntPtr handle, SendDeviceSyncStateCallback callback);
-
         public int clientIndex;
         public string serialNumber = "XXXXXXXXXXX";
         public bool bFrameCaptured = false;
@@ -151,7 +145,6 @@ namespace KinectServer
         private SendStoredFrameCallback sendStoredFrameCallback;
         private ConfirmTempSyncStateCallback confirmTempSyncStateCallback;
         private ConfirmMasterRestartCallback confirmMasterRestartCallback;
-        private SendDeviceSyncStateCallback sendDeviceSyncStateCallback;
 
         public NativeLiveScanClient(int index)
         {
@@ -226,8 +219,6 @@ namespace KinectServer
         }
 
         public void StartMaster() => StartMaster(clientHandle);
-
-        public void RequestSyncJackState() => RequestSyncJackState(clientHandle);
 
         public void SetSendSerialNumberCallback()
         {
@@ -364,32 +355,6 @@ namespace KinectServer
             });
 
             SetConfirmMasterRestartCallback(clientHandle, confirmMasterRestartCallback);
-        }
-
-        public void SetSendDeviceSyncStateCallback(Action<int> callback)
-        {
-            sendDeviceSyncStateCallback = new SendDeviceSyncStateCallback((int index, int state) =>
-            {
-                switch (state)
-                {
-                    case 0:
-                        currentDeviceTempSyncState = eTempSyncConfig.SUBORDINATE;
-                        break;
-                    case 1:
-                        currentDeviceTempSyncState = eTempSyncConfig.MASTER;
-                        break;
-                    case 2:
-                        currentDeviceTempSyncState = eTempSyncConfig.STANDALONE;
-                        break;
-                    default:
-                        currentDeviceTempSyncState = eTempSyncConfig.UNKNOWN;
-                        break;
-                }
-
-                callback(index);
-            });
-
-            SetSendDeviceSyncStateCallback(clientHandle, sendDeviceSyncStateCallback);
         }
 
         public void UpdateSocketState()

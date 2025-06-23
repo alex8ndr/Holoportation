@@ -178,7 +178,6 @@ namespace KinectServer
                 client.SetSendStoredFrameCallback();
                 client.SetConfirmTempSyncStateCallback(OnConfirmTempSyncState);
                 client.SetConfirmMasterRestartCallback(OnConfirmMasterRestart);
-                client.SetSendDeviceSyncStateCallback(OnReceiveDeviceSyncState);
                 client.Start();
                 
                 // Send settings
@@ -628,12 +627,6 @@ namespace KinectServer
         private void OnConfirmMasterRestart(int clientIndex)
         {
             MasterSuccessfullyRestarted();
-        }
-
-        private void OnReceiveDeviceSyncState(int clientIndex)
-        {
-            NativeLiveScanClient client = liveScanClients[(clientIndex)];
-            SendTemporalSyncData();
         }
     }
 }

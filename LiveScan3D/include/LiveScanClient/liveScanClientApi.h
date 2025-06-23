@@ -28,7 +28,6 @@ extern "C" {
 	LIVESCAN_API void EnableTemporalSync(LiveScanClientHandle handle, int tempSyncState, int syncOffset);
 	LIVESCAN_API void DisableTemporalSync(LiveScanClientHandle handle);
 	LIVESCAN_API void StartMaster(LiveScanClientHandle handle);
-	LIVESCAN_API void RequestSyncJackState(LiveScanClientHandle handle);
 
 	// Client to server (outbound) calls
 	LIVESCAN_API void SetSendSerialNumberCallback(LiveScanClientHandle handle, SendSerialNumberCallback cb);
@@ -38,5 +37,4 @@ extern "C" {
 	LIVESCAN_API void SetSendStoredFrameCallback(LiveScanClientHandle handle, SendStoredFrameCallback cb);
 	LIVESCAN_API void SetConfirmTempSyncStateCallback(LiveScanClientHandle handle, ConfirmTempSyncStateCallback cb);
 	LIVESCAN_API void SetConfirmMasterRestartCallback(LiveScanClientHandle handle, ConfirmMasterRestartCallback cb);
-	LIVESCAN_API void SetSendDeviceSyncStateCallback(LiveScanClientHandle handle, SendDeviceSyncStateCallback cb);
 }

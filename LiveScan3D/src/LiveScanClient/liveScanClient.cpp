@@ -151,10 +151,10 @@ void LiveScanClient::UpdateFrame()
 
 	bool bNewFrameAcquired = pCapture->AcquireFrame();
 
-	if (!bNewFrameAcquired)
+	if (!bNewFrameAcquired) {
 		return;
+	}
 
-	pCapture->MapColorFrameToCameraSpace(m_pCameraSpaceCoordinates);
 
 	{
 		std::lock_guard<std::mutex> lock(clientThreadMutex);
@@ -173,12 +173,17 @@ void LiveScanClient::UpdateFrame()
 	if (m_bCalibrate)
 	{
 		std::lock_guard<std::mutex> lock(clientThreadMutex);
-		Point3f* pCameraCoordinates = new Point3f[pCapture->nColorFrameWidth * pCapture->nColorFrameHeight];
-		pCapture->MapColorFrameToCameraSpace(pCameraCoordinates);
+		Point3f* floatPoints = new Point3f[pCapture->nColorFrameWidth * pCapture->nColorFrameHeight];
 
-		bool res = calibration.Calibrate(pCapture->pColorRGBX, pCameraCoordinates, pCapture->nColorFrameWidth, pCapture->nColorFrameHeight);
+		for (int i = 0; i < pCapture->lastFrameVertices.size(); i++) {
+			floatPoints[i].X = pCapture->lastFrameVertices[i].X;
+			floatPoints[i].Y = pCapture->lastFrameVertices[i].Y;
+			floatPoints[i].Z = pCapture->lastFrameVertices[i].Z;
+		}
 
-		delete[] pCameraCoordinates;
+		bool res = calibration.Calibrate(pCapture->pColorRGBX, floatPoints, pCapture->nColorFrameWidth, pCapture->nColorFrameHeight);
+
+		delete[] floatPoints;
 
 		if (res)
 		{
@@ -257,9 +262,6 @@ void LiveScanClient::ClearStoredFrames()
 
 void LiveScanClient::EnableTemporalSync(int tempSyncState, int syncOffset)
 {
-	//Determine if this device is a subordinate, master, or standalone
-	//int jackState = pCapture->GetSyncJackState();
-
 	bool res = false;
 
 	switch (tempSyncState)
@@ -370,11 +372,6 @@ void LiveScanClient::StartMaster()
 	}
 }
 
-void LiveScanClient::RequestSyncJackState()
-{
-	SendDeviceSyncState();
-}
-
 void LiveScanClient::SendSerialNumber()
 {
 	if (m_pWrapper && m_pWrapper->sendSerialNumberCallback)
@@ -479,26 +476,6 @@ void LiveScanClient::ConfirmMasterRestart()
 	m_bConfirmRestartAsMaster = false;
 }
 
-void LiveScanClient::SendDeviceSyncState()
-{
-	SYNC_STATE deviceSyncState = pCapture->GetSyncJackState();
-	m_bConfirmTempSyncState = false;
-
-	if (m_pWrapper && m_pWrapper->sendDeviceSyncStateCallback)
-	{
-		int syncState = 2; // default: STANDALONE
-		switch (deviceSyncState)
-		{
-		case MASTER: syncState = 0; break;
-		case SUBORDINATE:      syncState = 1; break;
-		case STANDALONE:  syncState = 2; break;
-		default: syncState = 2; break;
-		}
-
-		m_pWrapper->sendDeviceSyncStateCallback(m_nClientIndex, syncState);
-	}
-}
-
 void LiveScanClient::ClientThreadFunction()
 {
 	while (isClientThreadRunning)
@@ -539,7 +516,7 @@ void LiveScanClient::HandleClient()
 
 void LiveScanClient::ProcessFrame()
 {
-	unsigned int nVertices = pCapture->nColorFrameHeight * pCapture->nColorFrameWidth;
+	unsigned int nVertices = pCapture->lastFrameVertices.size();
 
 	//To save some processing cost, we allocate a full frame size (nVertices) of a Point3f Vector beforehand
 	//instead of using push_back for each vertice. Even though we have to copy the vertices into a clean array
@@ -548,39 +525,30 @@ void LiveScanClient::ProcessFrame()
 	vector<Point3f> AllVertices(nVertices);
 	int goodVerticesCount = 0;
 
+	// Calibration and bounds filtering
 	for (unsigned int vertexIndex = 0; vertexIndex < nVertices; vertexIndex++)
 	{
-		//As the resizing function doesn't return a valid RGB-Reserved value which indicates that this pixel is invalid,
-		//we cut all vertices under a distance of 0.0001mm, as the invalid vertices always have a Z-Value of 0
-		if (m_pCameraSpaceCoordinates[vertexIndex].Z >= 0.0001 && pCapture->pColorRGBX[vertexIndex].rgbReserved == 255)
-		{
-			Point3f temp = m_pCameraSpaceCoordinates[vertexIndex];
-			RGB tempColor = pCapture->pColorRGBX[vertexIndex];
-			if (calibration.bCalibrated)
-			{
-				temp.X += calibration.worldT[0];
-				temp.Y += calibration.worldT[1];
-				temp.Z += calibration.worldT[2];
-				temp = RotatePoint(temp, calibration.worldR);
+		Point3f temp = pCapture->lastFrameVertices[vertexIndex];
 
-				if (temp.X < m_vBounds[0] || temp.X > m_vBounds[3]
-					|| temp.Y < m_vBounds[1] || temp.Y > m_vBounds[4]
-					|| temp.Z < m_vBounds[2] || temp.Z > m_vBounds[5]) 
-				{
-					AllVertices[vertexIndex] = invalidPoint;
-					continue;
-				}
-					
+		if (calibration.bCalibrated)
+		{
+			temp.X += calibration.worldT[0];
+			temp.Y += calibration.worldT[1];
+			temp.Z += calibration.worldT[2];
+			temp = RotatePoint(temp, calibration.worldR);
+
+			if (temp.X < m_vBounds[0] || temp.X > m_vBounds[3]
+				|| temp.Y < m_vBounds[1] || temp.Y > m_vBounds[4]
+				|| temp.Z < m_vBounds[2] || temp.Z > m_vBounds[5])
+			{
+				AllVertices[vertexIndex] = invalidPoint;
+				continue;
 			}
 
-			AllVertices[vertexIndex] = temp;
-			goodVerticesCount++;
 		}
 
-		else 
-		{
-			AllVertices[vertexIndex] = invalidPoint;
-		}
+		AllVertices[vertexIndex] = temp;
+		goodVerticesCount++;
 	}
 
 	vector<Point3f> goodVertices(goodVerticesCount);
@@ -590,10 +558,10 @@ void LiveScanClient::ProcessFrame()
 	//Copy all valid vertices into a clean vector 
 	for (unsigned int i = 0; i < AllVertices.size(); i++)
 	{
-		if (!AllVertices[i].Invalid) 
+		if (!AllVertices[i].Invalid)
 		{
 			goodVertices[goodVerticesShortCounter] = AllVertices[i];
-			goodColorPoints[goodVerticesShortCounter] = pCapture->pColorRGBX[i];
+			goodColorPoints[goodVerticesShortCounter] = pCapture->lastFrameRGB[i];
 			goodVerticesShortCounter++;
 		}
 	}
@@ -602,7 +570,7 @@ void LiveScanClient::ProcessFrame()
 
 
 	vector<Point3s> goodVerticesShort(goodVertices.size());
-	
+
 	for (size_t i = 0; i < goodVertices.size(); i++)
 	{
 		goodVerticesShort[i] = goodVertices[i];
