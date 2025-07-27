@@ -1,10 +1,12 @@
 # HOLOPORTATION: Live 3D Object Capture and Transmission for CSA’s AR Astronaut Training
 
-This capstone project is an **open-source academic implementation** inspired by Microsoft’s concept of “Holoportation.”
+**By: Roxanne Archambault, Alex Turianskyj, Aleksej Dejanov, and Anh Tu Nguyen**
+
+This capstone project is an **open-source academic implementation** of real-time 3D point cloud reconstruction and transmission, inspired by Microsoft’s concept of “Holoportation.”
 
 ## Overview
 
-Holoportation is a system that enables real-time 3D point cloud capture, transmission, and rendering of everything within a defined zone surrounded by cameras. This project enhances astronaut training using augmented reality (AR) by transmitting real-time point cloud data to Microsoft HoloLens 2 headsets. The system processes depth and color data from multiple Orbbec Femto Bolt cameras, and transmits it in real-time, allowing trainers to include physical objects in remote training without prior modelling.
+Holoportation is a system that enables real-time 3D point cloud capture, transmission, and rendering of everything within a defined zone surrounded by RGBD cameras. This project enhances astronaut training using augmented reality (AR) by transmitting real-time point cloud data to Microsoft HoloLens 2 headsets. The system processes depth and color data from multiple Orbbec Femto Bolt cameras, and transmits it in real-time, allowing trainers to include physical objects in remote training without prior modelling.
 
 ## Features
 
